@@ -18,13 +18,13 @@ export default function TaskBoard({ socket }) {
     const onCreate = (t) => setTasks((prev) => [t, ...prev]);
     const onUpdate = (t) => setTasks((prev) => prev.map((x) => x.id === t.id ? t : x));
     const onDelete = (t) => setTasks((prev) => prev.filter((x) => x.id !== t.id));
-    socket.on('tasks:created', onCreate);
-    socket.on('tasks:updated', onUpdate);
-    socket.on('tasks:deleted', onDelete);
+    socket.on('task:created', onCreate);
+    socket.on('task:updated', onUpdate);
+    socket.on('task:deleted', onDelete);
     return () => {
-      socket.off('tasks:created', onCreate);
-      socket.off('tasks:updated', onUpdate);
-      socket.off('tasks:deleted', onDelete);
+      socket.off('task:created', onCreate);
+      socket.off('task:updated', onUpdate);
+      socket.off('task:deleted', onDelete);
     };
   }, [socket]);
 

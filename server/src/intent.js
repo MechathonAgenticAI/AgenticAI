@@ -1,56 +1,96 @@
 import { z } from 'zod';
 import { pipeline } from '@xenova/transformers';
 
-export const IntentSchema = z.object({
-  action: z.enum([
-    'create_task', 'update_task', 'delete_task', 'list_tasks',
-    'create_note', 'update_note', 'delete_note', 'list_notes',
-    'search'
-  ]),
-  params: z.record(z.any()).default({}),
-  requires_confirmation: z.boolean().default(false),
+export const AgentActionType = z.enum([
+  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks',
+  'create_note', 'delete_note', 'delete_all_notes'
+]);
+
+export const AgentAction = z.object({
+  type: AgentActionType,
+  params: z.record(z.any()).default({})
+});
+
+export const AgentPlan = z.object({
+  actions: z.array(AgentAction).default([]),
   confirmations: z.array(z.string()).default([]),
-  steps: z.array(z.any()).default([]),
   meta: z.object({ text: z.string() }).default({ text: '' })
 });
 
 function basicHeuristic(text) {
   const t = text.toLowerCase();
+  const plan = { actions: [], confirmations: [], meta: { text } };
+
+  // Handle multi-intent patterns like "add task paint house and also add note to wake up early"
+  const multiIntentMatch = t.match(/(?:add|create)\s+(task|note)\s+(.+?)\s+(?:and\s+(?:also\s+)?(?:add|create)\s+)?(task|note)\s+(.+)/i);
+  if (multiIntentMatch) {
+    const [_, firstType, firstText, secondType, secondText] = multiIntentMatch;
+    
+    // First action
+    if (firstType === 'task') {
+      plan.actions.push({ type: 'create_task', params: { title: firstText.trim() } });
+    } else {
+      plan.actions.push({ type: 'create_note', params: { text: firstText.trim() } });
+    }
+    
+    // Second action
+    if (secondType === 'task') {
+      plan.actions.push({ type: 'create_task', params: { title: secondText.trim() } });
+    } else {
+      plan.actions.push({ type: 'create_note', params: { text: secondText.trim() } });
+    }
+    
+    return plan;
+  }
+
+  // Single intent patterns
   // create task
   if (/\b(create|add|make)\b.*\btask\b/.test(t)) {
     const m = t.match(/task\s+(?:named\s+)?\"?([\w\s-]{3,80})\"?/);
     const title = m?.[1]?.trim();
-    return { action: 'create_task', params: { title }, meta: { text } };
+    if (title) {
+      plan.actions.push({ type: 'create_task', params: { title } });
+    }
+    return plan;
   }
+
   // update task done
   if (/(mark|set|update).*\b(task)\b.*\b(done|complete|completed|finished)\b/.test(t)) {
-    return { action: 'update_task', params: { status: 'done' }, meta: { text } };
+    plan.actions.push({ type: 'update_task_status', params: { status: 'done' } });
+    return plan;
   }
+
   // delete task(s)
   if (/\b(delete|remove)\b.*\btask(s)?\b/.test(t)) {
-    // safety for bulk delete
-    if (/\beverything|all\b/.test(t) || !/\b(id|named|titled)\b/.test(t)) {
-      return { action: 'delete_task', params: {}, requires_confirmation: true, confirmations: ['This may delete multiple tasks. Confirm?'], meta: { text } };
+    // Destructive bulk delete requires confirmation
+    if (/(all|everything|every)\b/.test(t) || !/\b(id|named|titled)\b/.test(t)) {
+      plan.actions.push({ type: 'delete_all_tasks', params: {} });
+      plan.confirmations.push('Delete ALL tasks?');
+    } else {
+      plan.actions.push({ type: 'delete_task', params: {} });
     }
-    return { action: 'delete_task', params: {}, meta: { text } };
+    return plan;
   }
-  // list tasks
-  if (/\b(list|show)\b.*\btasks\b/.test(t)) {
-    return { action: 'list_tasks', params: {}, meta: { text } };
-  }
+
   // notes
   if (/\b(create|add|make)\b.*\bnote\b/.test(t)) {
     const content = text.replace(/.*note\s*/i, '').trim();
-    return { action: 'create_note', params: { content }, meta: { text } };
+    plan.actions.push({ type: 'create_note', params: { text: content } });
+    return plan;
   }
+
   if (/\b(delete|remove)\b.*\bnote(s)?\b/.test(t)) {
-    return { action: 'delete_note', params: {}, requires_confirmation: true, confirmations: ['Confirm note deletion?'], meta: { text } };
+    if (/(all|everything|every)\b/.test(t)) {
+      plan.actions.push({ type: 'delete_all_notes', params: {} });
+      plan.confirmations.push('Delete ALL notes?');
+    } else {
+      plan.actions.push({ type: 'delete_note', params: {} });
+    }
+    return plan;
   }
-  if (/\b(list|show)\b.*\bnotes\b/.test(t)) {
-    return { action: 'list_notes', params: {}, meta: { text } };
-  }
-  // fallback search in memory
-  return { action: 'search', params: { query: text }, meta: { text } };
+
+  // fallback: return empty plan (will be handled by LLM)
+  return plan;
 }
 
 let zscPromise;
@@ -61,46 +101,58 @@ async function getClassifier() {
   return zscPromise;
 }
 
-const LABELS = [
-  'create_task', 'update_task', 'delete_task', 'list_tasks',
-  'create_note', 'update_note', 'delete_note', 'list_notes', 'search'
+const ACTION_TYPES = [
+  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks',
+  'create_note', 'delete_note', 'delete_all_notes'
 ];
 
 export async function parseIntent(text, { sessionId } = {}) {
-  // Multi-step naive split
-  const segments = text.split(/\b(?:and then|and|;|\.|\n)\b/i).map(s => s.trim()).filter(Boolean);
-  const classifier = await getClassifier().catch(() => null);
-  const steps = [];
-  for (const seg of segments) {
-    let choice = null;
+  // First try heuristic parsing
+  let plan = basicHeuristic(text);
+  
+  // If heuristics didn't find actions, try LLM
+  if (plan.actions.length === 0) {
+    const classifier = await getClassifier().catch(() => null);
     if (classifier) {
       try {
-        const out = await classifier(seg, LABELS, { hypothesis_template: 'This text is about {}.' });
-        const label = Array.isArray(out.labels) ? out.labels[0] : out?.labels?.[0];
-        if (label && LABELS.includes(label)) choice = label;
-      } catch {}
+        const out = await classifier(text, ACTION_TYPES, { hypothesis_template: 'This text is about {}.' });
+        const topAction = Array.isArray(out.labels) ? out.labels[0] : out?.labels?.[0];
+        
+        if (topAction && ACTION_TYPES.includes(topAction)) {
+          let params = {};
+          if (topAction === 'create_task') {
+            const m = text.match(/task\s+(?:named\s+)?\"?([\w\s-]{3,80})\"?/i);
+            if (m?.[1]) params.title = m[1].trim();
+          }
+          if (topAction === 'create_note') {
+            params.text = text.replace(/.*note\s*/i, '').trim();
+          }
+          if (topAction === 'update_task_status' && /done|complete|finished/i.test(text)) {
+            params.status = 'done';
+          }
+          
+          plan.actions.push({ type: topAction, params });
+          
+          // Add confirmation for destructive actions
+          if (topAction === 'delete_all_tasks') {
+            plan.confirmations.push('Delete ALL tasks?');
+          } else if (topAction === 'delete_all_notes') {
+            plan.confirmations.push('Delete ALL notes?');
+          }
+        }
+      } catch (err) {
+        console.error('LLM classification error:', err);
+      }
     }
-    if (!choice) {
-      choice = basicHeuristic(seg).action;
-    }
-    // param extraction heuristics per segment
-    let params = {};
-    if (choice === 'create_task') {
-      const m = seg.match(/task\s+(?:named\s+)?\"?([\w\s-]{3,80})\"?/i);
-      if (m?.[1]) params.title = m[1].trim();
-    }
-    if (choice === 'update_task' && /done|complete|finished/i.test(seg)) {
-      params.status = 'done';
-    }
-    if (choice === 'create_note') {
-      params.content = seg.replace(/.*note\s*/i, '').trim();
-    }
-    steps.push({ action: choice, params, meta: { text: seg } });
   }
 
-  // Choose primary step as the first
-  let first = steps[0] || basicHeuristic(text);
-  let intent = IntentSchema.parse({ ...first, steps });
-  if (sessionId) intent.params.sessionId = sessionId;
-  return intent;
+  // Add session ID to all action params
+  if (sessionId) {
+    plan.actions = plan.actions.map(action => ({
+      ...action,
+      params: { ...action.params, sessionId }
+    }));
+  }
+
+  return AgentPlan.parse(plan);
 }

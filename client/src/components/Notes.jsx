@@ -16,13 +16,13 @@ export default function Notes({ socket }) {
     const onCreate = (n) => setNotes((prev) => [n, ...prev]);
     const onUpdate = (n) => setNotes((prev) => prev.map((x) => x.id === n.id ? n : x));
     const onDelete = (n) => setNotes((prev) => prev.filter((x) => x.id !== n.id));
-    socket.on('notes:created', onCreate);
-    socket.on('notes:updated', onUpdate);
-    socket.on('notes:deleted', onDelete);
+    socket.on('note:created', onCreate);
+    socket.on('note:updated', onUpdate);
+    socket.on('note:deleted', onDelete);
     return () => {
-      socket.off('notes:created', onCreate);
-      socket.off('notes:updated', onUpdate);
-      socket.off('notes:deleted', onDelete);
+      socket.off('note:created', onCreate);
+      socket.off('note:updated', onUpdate);
+      socket.off('note:deleted', onDelete);
     };
   }, [socket]);
 

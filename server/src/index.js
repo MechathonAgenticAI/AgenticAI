@@ -6,8 +6,10 @@ import { Server as IOServer } from 'socket.io';
 import tasksRouterFactory from './routes/tasks.js';
 import notesRouterFactory from './routes/notes.js';
 import { parseIntent } from './intent.js';
-import { executeIntent } from './actions.js';
- import { v4 as uuidv4 } from 'uuid';
+import { executePlan } from './actions.js';
+import { v4 as uuidv4 } from 'uuid';
+import { embedText } from './vector.js';
+import { query } from './db.js';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -38,73 +40,101 @@ app.get('/health', (req, res) => {
 });
 
 // Agent endpoints
-app.post('/agent/parse', async (req, res, next) => {
+app.post('/api/agent/parse', async (req, res, next) => {
   try {
     const { text, sessionId } = req.body || {};
-    const intent = await parseIntent(String(text || ''), { sessionId });
-    io.emit('agent:intent', intent);
-    res.json(intent);
+    const plan = await parseIntent(String(text || ''), { sessionId });
+    io.emit('agent:intent', plan);
+    res.json(plan);
   } catch (e) { next(e); }
 });
 
-app.post('/agent/act', async (req, res, next) => {
+app.post('/api/agent/act', async (req, res, next) => {
   try {
-    const { intent } = req.body || {};
-    if (!intent) return res.status(400).json({ error: 'intent required' });
-    if (intent.requires_confirmation) {
-      const id = uuidv4();
-      pendingConfirmations.set(id, { intent });
-      const payload = { id, intent, message: intent.confirmations?.[0] || 'Are you sure?' };
-      io.emit('agent:confirmation', payload);
-      return res.status(202).json({ pending_confirmation: payload });
+    const { plan } = req.body || {};
+    if (!plan) return res.status(400).json({ error: 'plan required' });
+    
+    const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations });
+    
+    if (result.requires_confirmation) {
+      return res.status(202).json({ pending_confirmation: { confirmation_id: result.confirmation_id }, plan });
     }
-    const result = await executeIntent(intent, { io, pendingRequests });
-    res.json({ intent, result });
+    
+    res.json({ plan, result });
   } catch (e) { next(e); }
 });
 
-app.post('/agent/command', async (req, res, next) => {
+app.post('/api/agent/command', async (req, res, next) => {
   try {
-    const { text, sessionId } = req.body || {};
-    const intent = await parseIntent(String(text || ''), { sessionId });
-    io.emit('agent:intent', intent);
-    if (intent.requires_confirmation) {
-      const id = uuidv4();
-      pendingConfirmations.set(id, { intent });
-      const payload = { id, intent, message: intent.confirmations?.[0] || 'Are you sure?' };
-      io.emit('agent:confirmation', payload);
-      return res.status(202).json({ pending_confirmation: payload, intent });
+    const { sessionId, command } = req.body || {};
+    const text = String(command || '');
+    
+    // status: received
+    io.emit('agent:status', { sessionId, state: 'received' });
+    
+    // ensure session row exists
+    if (sessionId) {
+      try { await query(`INSERT INTO sessions (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [sessionId]); } catch {}
     }
-    const result = await executeIntent(intent, { io, pendingRequests });
-    res.json({ intent, result });
+    
+    // log command with embedding
+    try {
+      const vec = await embedText(text);
+      const vectorStr = '[' + vec.join(',') + ']';
+      await query(`INSERT INTO command_log (id, session_id, raw_command, embedding) VALUES ($1, $2, $3, $4::vector)`, [uuidv4(), sessionId || null, text, vectorStr]);
+    } catch {}
+    
+    const plan = await parseIntent(text, { sessionId });
+    io.emit('agent:intent', plan);
+    
+    const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations });
+    
+    if (result.requires_confirmation) {
+      io.emit('agent:status', { sessionId, state: 'awaiting_confirmation' });
+      return res.status(202).json({ pending_confirmation: { confirmation_id: result.confirmation_id }, plan });
+    }
+    
+    io.emit('agent:status', { sessionId, state: 'done' });
+    res.json({ plan, result });
   } catch (e) { next(e); }
 });
 
-app.post('/agent/confirm', async (req, res, next) => {
+app.post('/api/agent/confirm', async (req, res, next) => {
   try {
-    const { id, confirm, cancel } = req.body || {};
-    const pending = pendingConfirmations.get(id);
+    const { sessionId, confirmationToken, cancel } = req.body || {};
+    const pending = pendingConfirmations.get(confirmationToken);
     if (!pending) return res.status(404).json({ error: 'not_found' });
-    pendingConfirmations.delete(id);
-    if (cancel === true || confirm === false) {
-      io.emit('agent:confirmation:cancelled', { id });
+    pendingConfirmations.delete(confirmationToken);
+    
+    if (cancel === true) {
+      io.emit('agent:needs_confirmation:cancelled', { confirmationToken });
       return res.json({ ok: true, cancelled: true });
     }
-    const result = await executeIntent(pending.intent, { io, pendingRequests });
-    io.emit('agent:confirmation:applied', { id, intent: pending.intent, result });
-    res.json({ ok: true, intent: pending.intent, result });
+    
+    io.emit('agent:status', { sessionId, state: 'executing' });
+    const result = await executePlan(pending.plan, { io, pendingRequests, pendingConfirmations });
+    io.emit('agent:status', { sessionId, state: 'done' });
+    io.emit('agent:needs_confirmation:applied', { confirmationToken, plan: pending.plan, result });
+    res.json({ ok: true, plan: pending.plan, result });
   } catch (e) { next(e); }
 });
 
-app.post('/agent/continue', async (req, res, next) => {
+app.post('/api/agent/continue', async (req, res, next) => {
   try {
-    const { id, params } = req.body || {};
+    const { sessionId, id, params } = req.body || {};
     const pending = pendingRequests.get(id);
     if (!pending) return res.status(404).json({ error: 'not_found' });
     pendingRequests.delete(id);
-    const intent = { ...pending.intent, params: { ...(pending.intent.params || {}), ...(params || {}) } };
-    const result = await executeIntent(intent, { io, pendingRequests });
-    res.json({ ok: true, intent, result });
+    
+    // Update the plan with the missing parameters
+    const updatedPlan = { ...pending.plan };
+    updatedPlan.actions = updatedPlan.actions.map(action => ({
+      ...action,
+      params: { ...action.params, ...params }
+    }));
+    
+    const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations });
+    res.json({ ok: true, plan: updatedPlan, result });
   } catch (e) { next(e); }
 });
 

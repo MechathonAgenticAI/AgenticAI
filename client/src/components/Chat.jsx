@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Mic, Send, Check, X } from 'lucide-react';
 
-export default function Chat({ socket, confirmations, setConfirmations }) {
+export default function Chat({ socket, sessionId, confirmations, setConfirmations }) {
   const [text, setText] = useState('');
   const [intents, setIntents] = useState([]);
   const recRef = useRef(null);
@@ -10,18 +10,34 @@ export default function Chat({ socket, confirmations, setConfirmations }) {
   const [paramReqs, setParamReqs] = useState([]); // {id, intent, missing, message}
   const [paramInputs, setParamInputs] = useState({});
 
+  // Ensure sessionId is always available
+  const effectiveSessionId = sessionId || 'anonymous';
+
   useEffect(() => {
-    socket.on('agent:intent', (intent) => {
-      setIntents((prev) => [intent, ...prev]);
+    socket.on('agent:intent', (plan) => {
+      setIntents((prev) => [plan, ...prev]);
     });
-    socket.on('agent:parameters', (payload) => {
+    socket.on('agent:needs_clarification', (payload) => {
       setParamReqs((prev) => [payload, ...prev]);
       speak(payload.message || 'I need more information to continue.');
     });
-    socket.on('agent:confirmation', (payload) => {
+    socket.on('agent:needs_confirmation', (payload) => {
       speak('Confirmation required');
     });
-    return () => socket.off('agent:intent');
+    socket.on('agent:status', (payload) => {
+      console.log('Agent status:', payload);
+    });
+    socket.on('agent:error', (payload) => {
+      console.error('Agent error:', payload);
+      speak(payload.message || 'An error occurred');
+    });
+    return () => {
+      socket.off('agent:intent');
+      socket.off('agent:needs_clarification');
+      socket.off('agent:needs_confirmation');
+      socket.off('agent:status');
+      socket.off('agent:error');
+    };
   }, [socket]);
 
   const startVoice = () => {
@@ -48,16 +64,17 @@ export default function Chat({ socket, confirmations, setConfirmations }) {
 
   const send = async () => {
     if (!text.trim()) return;
-    const { data } = await axios.post('http://localhost:4000/agent/command', { text });
+    const { data } = await axios.post('http://localhost:4000/api/agent/command', { sessionId: effectiveSessionId, command: text });
     if (data?.pending_confirmation) {
       setConfirmations((prev) => [data.pending_confirmation, ...prev]);
     }
     setText('');
   };
 
-  const confirm = async (id, confirm) => {
-    await axios.post('http://localhost:4000/agent/confirm', { id, confirm });
-    setConfirmations((prev) => prev.filter((c) => c.id !== id));
+  const confirm = async (confirmationToken, approve) => {
+    const payload = approve ? { sessionId: effectiveSessionId, confirmationToken } : { sessionId: effectiveSessionId, confirmationToken, cancel: true };
+    await axios.post('http://localhost:4000/api/agent/confirm', payload);
+    setConfirmations((prev) => prev.filter((c) => c.confirmationToken !== confirmationToken));
   };
 
   const speak = (message) => {
@@ -76,7 +93,7 @@ export default function Chat({ socket, confirmations, setConfirmations }) {
 
   const continueFlow = async (reqId) => {
     const params = paramInputs[reqId] || {};
-    await axios.post('http://localhost:4000/agent/continue', { id: reqId, params });
+    await axios.post('http://localhost:4000/api/agent/continue', { sessionId: effectiveSessionId, id: reqId, params });
     setParamReqs((prev) => prev.filter((r) => r.id !== reqId));
     const { [reqId]: _, ...rest } = paramInputs;
     setParamInputs(rest);
@@ -121,14 +138,14 @@ export default function Chat({ socket, confirmations, setConfirmations }) {
       {confirmations.length > 0 && (
         <div className="space-y-2">
           {confirmations.map((c) => (
-            <div key={c.id} className="border rounded p-3 flex items-center justify-between">
+            <div key={c.confirmationToken || c.id} className="border rounded p-3 flex items-center justify-between">
               <div>
                 <div className="text-sm text-gray-600">Requires confirmation</div>
-                <pre className="text-xs bg-gray-50 p-2 rounded max-h-40 overflow-auto">{JSON.stringify(c.intent, null, 2)}</pre>
+                <pre className="text-xs bg-gray-50 p-2 rounded max-h-40 overflow-auto">{JSON.stringify(c.plan || c.intent, null, 2)}</pre>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => confirm(c.id, true)} className="inline-flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded text-sm"><Check size={14}/>Confirm</button>
-                <button onClick={() => confirm(c.id, false)} className="inline-flex items-center gap-1 bg-gray-200 px-2 py-1 rounded text-sm"><X size={14}/>Cancel</button>
+                <button onClick={() => confirm(c.confirmationToken || c.id, true)} className="inline-flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded text-sm"><Check size={14}/>Confirm</button>
+                <button onClick={() => confirm(c.confirmationToken || c.id, false)} className="inline-flex items-center gap-1 bg-gray-200 px-2 py-1 rounded text-sm"><X size={14}/>Cancel</button>
               </div>
             </div>
           ))}
