@@ -1,0 +1,20 @@
+{
+  "name": "agentic-bridge",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "client",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c green,cyan \"npm --workspace server run dev\" \"npm --workspace client run dev\"",
+    "server": "npm --workspace server run dev",
+    "client": "npm --workspace client run dev",
+    "migrate": "npm --workspace server run migrate"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

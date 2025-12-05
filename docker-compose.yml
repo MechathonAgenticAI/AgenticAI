@@ -1,0 +1,27 @@
+version: '3.9'
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: agentic_bridge_db
+    environment:
+      POSTGRES_DB: agentic_bridge
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+volumes:
+  db_data:
