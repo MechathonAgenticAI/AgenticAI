@@ -85,6 +85,15 @@ app.post('/api/agent/command', async (req, res, next) => {
     const { sessionId, command } = req.body || {};
     const text = String(command || '');
     
+    // Add timeout to prevent hanging
+    const timeout = setTimeout(() => {
+      if (!res.headersSent) {
+        console.log('Request timeout, sending error response');
+        res.status(408).json({ error: 'Request timeout', message: 'The request took too long to process' });
+      }
+    }, 30000); // 30 second timeout
+    
+    try {
     // Check if there's an active conversation state
     const conversationState = conversationStates.get(sessionId);
     if (conversationState) {
@@ -181,8 +190,27 @@ app.post('/api/agent/command', async (req, res, next) => {
           lastCreatedTask: null,
           lastMentionedTask: null
         });
+        
+        // Load recent tasks into context asynchronously (non-blocking)
+        loadRecentTasksIntoContext(sessionId).catch(err => 
+          console.error('Failed to load recent tasks:', err)
+        );
       }
       return conversationContext.get(sessionId);
+    }
+
+    // Load recent tasks into context
+    async function loadRecentTasksIntoContext(sessionId) {
+      try {
+        const { rows } = await query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 5');
+        const context = conversationContext.get(sessionId);
+        if (context) {
+          context.recentTasks = rows;
+          console.log(`Loaded ${rows.length} recent tasks into context for session ${sessionId}`);
+        }
+      } catch (error) {
+        console.error('Error loading recent tasks into context:', error);
+      }
     }
 
     // Update context with new task
@@ -201,6 +229,37 @@ app.post('/api/agent/command', async (req, res, next) => {
     // Get context for AI
     const context = getSessionContext(sessionId);
     console.log('Session context:', context);
+    console.log('Recent tasks count:', context.recentTasks.length);
+    
+    // If context is empty and user says "delete this task", provide helpful message
+    if (text.toLowerCase().includes('delete this task') && context.recentTasks.length === 0) {
+      return res.json({
+        awaiting_input: true,
+        type: 'task_id',
+        message: "I don't see any recent tasks to delete. Please specify which task by number (e.g., 'delete task 1') or title (e.g., 'delete task buy groceries')."
+      });
+    }
+    
+    // If user says "delete this task" and we have context, use the most recent task
+    if (text.toLowerCase().includes('delete this task') && context.recentTasks.length > 0) {
+      const mostRecentTask = context.recentTasks[0];
+      console.log('Auto-resolving "delete this task" to most recent task:', mostRecentTask);
+      
+      // Create a plan with the specific task ID
+      const plan = {
+        actions: [{
+          type: 'delete_task',
+          params: { id: mostRecentTask.id }
+        }],
+        confirmations: [`Delete task "${mostRecentTask.title}"?`],
+        meta: { text }
+      };
+      
+      io.emit('agent:intent', plan);
+      const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations, sessionId });
+      io.emit('agent:status', { sessionId, state: 'done' });
+      return res.json({ plan, result });
+    }
     
     // AI processing started
     io.emit('agent:status', { sessionId, state: 'ai_processing' });
@@ -315,7 +374,26 @@ app.post('/api/agent/command', async (req, res, next) => {
     
     io.emit('agent:status', { sessionId, state: 'done' });
     res.json({ plan, result });
-  } catch (e) { next(e); }
+    
+    // Clear timeout on successful completion
+    clearTimeout(timeout);
+    
+    } catch (error) {
+      console.error('Error in command processing:', error);
+      clearTimeout(timeout);
+      
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Processing failed', 
+          message: 'An error occurred while processing your command',
+          details: error.message 
+        });
+      }
+    }
+  } catch (e) { 
+    console.error('Unexpected error in command endpoint:', e);
+    next(e); 
+  }
 });
 
 app.post('/api/agent/confirm', async (req, res, next) => {

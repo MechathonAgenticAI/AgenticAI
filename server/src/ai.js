@@ -30,6 +30,7 @@ Context-aware deletion:
 - If user says "delete this task" and context shows a recently mentioned task, use that task ID
 - If user says "delete task [title]" and no ID provided, search for task by title
 - If user says "delete the task I just created", look for the most recently created task
+- IMPORTANT: Always provide a specific task ID when context is available, never leave id empty
 
 Response format:
 {
@@ -68,6 +69,9 @@ Output: {"actions": [{"type": "create_task", "params": {"title": "Call mom for b
 
 Input: "Delete this task"
 Output: {"actions": [{"type": "delete_task", "params": {"id": "recent_task_id_from_context"}}], "confirmations": ["Delete task 'recent task title'?"], "meta": {"text": "Delete this task"}}
+
+Input: "Delete this task" (when no context available)
+Output: {"actions": [{"type": "delete_task", "params": {}}], "confirmations": ["Which task would you like to delete? Please provide the task number or title."], "meta": {"text": "Delete this task"}}
 
 Input: "Delete the task I just created"
 Output: {"actions": [{"type": "delete_task", "params": {"id": "most_recent_task_id"}}], "confirmations": ["Delete task 'most recent task title'?"], "meta": {"text": "Delete the task I just created"}}
@@ -131,12 +135,18 @@ export async function parseIntentWithAI(text, { sessionId, context } = {}) {
     console.log(fullPrompt);
     console.log('---');
     
-    const response = await cohere.chat({
-      model: 'command-nightly',
-      message: fullPrompt,
-      maxTokens: 500,
-      temperature: 0.1,
-    });
+    // Add timeout for AI call
+    const response = await Promise.race([
+      cohere.chat({
+        model: 'command-nightly',
+        message: fullPrompt,
+        maxTokens: 500,
+        temperature: 0.1,
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI request timeout')), 15000)
+      )
+    ]);
 
     const aiText = response.text.trim();
     console.log('Raw Cohere response:', aiText);
