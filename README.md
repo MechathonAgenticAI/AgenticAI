@@ -14,7 +14,6 @@ docker compose up -d
 
 ```bash
 npm install
-npm run migrate
 npm run dev
 ```
 

@@ -6,8 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js",
-    "migrate": "node scripts/migrate.js"
+    "start": "node src/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
