@@ -15,11 +15,11 @@ export default function buildTasksRouter(io) {
   router.post('/', async (req, res, next) => {
     try {
       const id = uuidv4();
-      const { title, description = '', status = 'todo' } = req.body || {};
+      const { title, description = '', status = 'todo', category = 'general' } = req.body || {};
       if (!title) return res.status(400).json({ error: 'title_required' });
       const { rows } = await query(
-        `INSERT INTO tasks (id, title, description, status) VALUES ($1, $2, $3, $4) RETURNING *`,
-        [id, title, description, status]
+        `INSERT INTO tasks (id, title, description, category, status) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [id, title, description, category, status]
       );
       const task = rows[0];
       io.emit('tasks:created', task);
@@ -30,7 +30,7 @@ export default function buildTasksRouter(io) {
   router.patch('/:id', async (req, res, next) => {
     try {
       const { id } = req.params;
-      const fields = ['title', 'description', 'status'];
+      const fields = ['title', 'description', 'status', 'category'];
       const updates = [];
       const values = [];
       for (const f of fields) {

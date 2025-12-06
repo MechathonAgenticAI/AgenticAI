@@ -9,17 +9,27 @@ const INTENT_PROMPT = `
 You are an AI assistant that parses natural language commands into structured JSON actions.
 
 Available action types:
-- create_task: Create a new task with title and optional description
+- create_task: Create a new task with title, optional description, and AI-determined category
 - update_task_status: Update task status (e.g., mark as done)
 - delete_task: Delete a specific task
 - delete_all_tasks: Delete all tasks (requires confirmation)
+- bulk_delete_tasks: Delete multiple tasks matching a pattern (requires confirmation)
+- bulk_update_tasks: Update multiple tasks matching a pattern (requires confirmation)
 
 Rules:
 1. Extract parameters carefully from the text
 2. For multi-intent commands, return multiple actions
-3. Add confirmations for destructive actions (delete_task, delete_all_tasks)
+3. Add confirmations for destructive actions (delete_task, delete_all_tasks, bulk_delete_tasks, bulk_update_tasks)
 4. Return valid JSON only
 5. If unclear, ask for clarification by returning empty actions
+6. For create_task actions, determine appropriate category based on task content
+7. For bulk operations, extract the pattern/keyword and action type from the text
+8. For ambiguous references like "this task" or "that task", check if context provides a recent task ID
+
+Context-aware deletion:
+- If user says "delete this task" and context shows a recently mentioned task, use that task ID
+- If user says "delete task [title]" and no ID provided, search for task by title
+- If user says "delete the task I just created", look for the most recently created task
 
 Response format:
 {
@@ -29,7 +39,9 @@ Response format:
       "params": {
         "title": "extracted title",
         "description": "extracted description", 
+        "category": "AI-determined category",
         "status": "done|todo",
+        "pattern": "keyword pattern for bulk operations",
         "id": "specific_id_if_mentioned"
       }
     }
@@ -40,7 +52,42 @@ Response format:
 
 Examples:
 Input: "Create a task to buy groceries"
-Output: {"actions": [{"type": "create_task", "params": {"title": "buy groceries"}}], "confirmations": [], "meta": {"text": "Create a task to buy groceries"}}
+Output: {"actions": [{"type": "create_task", "params": {"title": "buy groceries", "category": "shopping"}}], "confirmations": [], "meta": {"text": "Create a task to buy groceries"}}
+
+Input: "Schedule a meeting with the team"
+Output: {"actions": [{"type": "create_task", "params": {"title": "Schedule a meeting with the team", "category": "work"}}], "confirmations": [], "meta": {"text": "Schedule a meeting with the team"}}
+
+Input: "Work out at the gym"
+Output: {"actions": [{"type": "create_task", "params": {"title": "Work out at the gym", "category": "health"}}], "confirmations": [], "meta": {"text": "Work out at the gym"}}
+
+Input: "Pay electricity bill"
+Output: {"actions": [{"type": "create_task", "params": {"title": "Pay electricity bill", "category": "finance"}}], "confirmations": [], "meta": {"text": "Pay electricity bill"}}
+
+Input: "Call mom for birthday"
+Output: {"actions": [{"type": "create_task", "params": {"title": "Call mom for birthday", "category": "personal"}}], "confirmations": [], "meta": {"text": "Call mom for birthday"}}
+
+Input: "Delete this task"
+Output: {"actions": [{"type": "delete_task", "params": {"id": "recent_task_id_from_context"}}], "confirmations": ["Delete task 'recent task title'?"], "meta": {"text": "Delete this task"}}
+
+Input: "Delete the task I just created"
+Output: {"actions": [{"type": "delete_task", "params": {"id": "most_recent_task_id"}}], "confirmations": ["Delete task 'most recent task title'?"], "meta": {"text": "Delete the task I just created"}}
+
+Input: "Delete task buy groceries"
+Output: {"actions": [{"type": "delete_task", "params": {"title": "buy groceries"}}], "confirmations": ["Delete task 'buy groceries'?"], "meta": {"text": "Delete task buy groceries"}}
+
+Input: "Delete all tasks related to vehicle"
+Output: {"actions": [{"type": "bulk_delete_tasks", "params": {"pattern": "vehicle"}}], "confirmations": ["Delete all tasks containing 'vehicle'?"], "meta": {"text": "Delete all tasks related to vehicle"}}
+
+Input: "Mark all car-related tasks as done"
+Output: {"actions": [{"type": "bulk_update_tasks", "params": {"pattern": "car", "status": "done"}}], "confirmations": ["Mark all tasks containing 'car' as done?"], "meta": {"text": "Mark all car-related tasks as done"}}
+
+Input: "Complete all work tasks"
+Output: {"actions": [{"type": "bulk_update_tasks", "params": {"pattern": "work", "status": "done"}}], "confirmations": ["Mark all tasks containing 'work' as done?"], "meta": {"text": "Complete all work tasks"}}
+
+Input: "Remove all shopping tasks"
+Output: {"actions": [{"type": "bulk_delete_tasks", "params": {"pattern": "shopping"}}], "confirmations": ["Delete all tasks containing 'shopping'?"], "meta": {"text": "Remove all shopping tasks"}}
+
+Available categories: work, personal, shopping, health, finance, education, home, travel, entertainment, general
 
 Input: "Mark my task as done"  
 Output: {"actions": [{"type": "update_task_status", "params": {"status": "done"}}], "confirmations": [], "meta": {"text": "Mark my task as done"}}
@@ -64,13 +111,21 @@ Input: "Delete this task "
 Output: {"actions": [{"type": "delete_task", "params": {}}], "confirmations": ["Delete task?"], "meta": {"text": "Delete task"}}
 `;
 
-export async function parseIntentWithAI(text, { sessionId } = {}) {
+export async function parseIntentWithAI(text, { sessionId, context } = {}) {
   try {
     console.log('=== AI PARSING START ===');
     console.log('Input text:', text);
     console.log('Session ID:', sessionId);
+    console.log('Context:', context);
     
-    const fullPrompt = `${INTENT_PROMPT}\n\nInput: ${text}\n\nOutput:`;
+    let contextPrompt = '';
+    if (context && context.recentTasks && context.recentTasks.length > 0) {
+      contextPrompt = `\n\nRecent task context:\n${context.recentTasks.map((task, index) => 
+        `${index + 1}. ID: ${task.id}, Title: "${task.title}", Description: "${task.description || ''}"`
+      ).join('\n')}`;
+    }
+    
+    const fullPrompt = `${INTENT_PROMPT}${contextPrompt}\n\nInput: ${text}\n\nOutput:`;
     console.log('Full prompt being sent to Cohere:');
     console.log('---');
     console.log(fullPrompt);

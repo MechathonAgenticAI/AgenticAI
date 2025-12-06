@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { parseIntentWithAI } from './ai.js';
 
 export const AgentActionType = z.enum([
-  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks'
+  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks', 'bulk_delete_tasks', 'bulk_update_tasks'
 ]);
 
 export const AgentAction = z.object({
@@ -127,10 +127,11 @@ function basicHeuristic(text) {
   return plan;
 }
 
-export async function parseIntent(text, { sessionId } = {}) {
+export async function parseIntent(text, { sessionId, context } = {}) {
   console.log('=== PARSING INTENT ===');
   console.log('Input text:', text);
   console.log('Session ID:', sessionId);
+  console.log('Context:', context);
   
   // Skip heuristic parsing - use AI only
   // let plan = basicHeuristic(text);
@@ -139,7 +140,7 @@ export async function parseIntent(text, { sessionId } = {}) {
   // Always use AI parsing
   console.log('Using AI parsing...');
   try {
-    const aiResult = await parseIntentWithAI(text, { sessionId });
+    const aiResult = await parseIntentWithAI(text, { sessionId, context });
     console.log('AI result:', JSON.stringify(aiResult, null, 2));
     return AgentPlan.parse(aiResult);
   } catch (error) {

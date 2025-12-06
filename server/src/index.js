@@ -24,11 +24,29 @@ const io = new IOServer(server, {
 // In-memory stores for confirmations and parameter requests
 const pendingConfirmations = new Map(); // id -> { intent }
 const conversationStates = new Map(); // New: Track conversation states per session
+const conversationContext = new Map(); // New: Track conversation context (last mentioned tasks)
 const pendingRequests = new Map(); // id -> { intent, missing }
 
 io.on('connection', (socket) => {
   socket.emit('hello', { ok: true });
 });
+
+// Add context management to io object
+io.updateContext = function(sessionId, task, action) {
+  const context = conversationContext.get(sessionId);
+  if (context) {
+    context.lastMentionedTask = task;
+    
+    if (action === 'created') {
+      context.lastCreatedTask = task;
+    }
+    
+    // Add to recent tasks (keep only last 5)
+    context.recentTasks = [task, ...context.recentTasks.filter(t => t.id !== task.id)].slice(0, 5);
+    
+    console.log(`Updated context for session ${sessionId}:`, context);
+  }
+};
 
 // Routers
 app.use('/api/tasks', tasksRouterFactory(io));
@@ -49,10 +67,10 @@ app.post('/api/agent/parse', async (req, res, next) => {
 
 app.post('/api/agent/act', async (req, res, next) => {
   try {
-    const { plan } = req.body || {};
+    const { plan, sessionId } = req.body || {};
     if (!plan) return res.status(400).json({ error: 'plan required' });
     
-    const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations });
+    const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations, sessionId });
     
     if (result.requires_confirmation) {
       return res.status(202).json({ pending_confirmation: { confirmation_id: result.confirmation_id }, plan });
@@ -89,7 +107,27 @@ app.post('/api/agent/command', async (req, res, next) => {
         
         // Execute the completed plan
         io.emit('agent:status', { sessionId, state: 'executing' });
-        const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations, skipConfirmation: true });
+        const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations, skipConfirmation: true, sessionId });
+        io.emit('agent:status', { sessionId, state: 'done' });
+        
+        return res.json({ plan: updatedPlan, result });
+      } else if (conversationState.type === 'awaiting_pattern') {
+        // User provided a pattern, complete the action
+        const pattern = text.trim();
+        const updatedPlan = {
+          ...conversationState.plan,
+          actions: conversationState.plan.actions.map(action => ({
+            ...action,
+            params: { ...action.params, pattern }
+          }))
+        };
+        
+        // Clear the conversation state
+        conversationStates.delete(sessionId);
+        
+        // Execute the completed plan
+        io.emit('agent:status', { sessionId, state: 'executing' });
+        const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations });
         io.emit('agent:status', { sessionId, state: 'done' });
         
         return res.json({ plan: updatedPlan, result });
@@ -135,19 +173,51 @@ app.post('/api/agent/command', async (req, res, next) => {
       }
     }
     
-    // status: received
-    io.emit('agent:status', { sessionId, state: 'received' });
+    // Get or create context for session
+    function getSessionContext(sessionId) {
+      if (!conversationContext.has(sessionId)) {
+        conversationContext.set(sessionId, {
+          recentTasks: [],
+          lastCreatedTask: null,
+          lastMentionedTask: null
+        });
+      }
+      return conversationContext.get(sessionId);
+    }
+
+    // Update context with new task
+    function updateContextWithTask(sessionId, task, action = 'created') {
+      const context = getSessionContext(sessionId);
+      context.lastMentionedTask = task;
+      
+      if (action === 'created') {
+        context.lastCreatedTask = task;
+      }
+      
+      // Add to recent tasks (keep only last 5)
+      context.recentTasks = [task, ...context.recentTasks.filter(t => t.id !== task.id)].slice(0, 5);
+    }
+
+    // Get context for AI
+    const context = getSessionContext(sessionId);
+    console.log('Session context:', context);
     
     // AI processing started
     io.emit('agent:status', { sessionId, state: 'ai_processing' });
     
-    const plan = await parseIntent(text, { sessionId });
+    const plan = await parseIntent(text, { sessionId, context });
     io.emit('agent:intent', plan);
     
     // Check if plan needs task ID (for conversational flow)
     const needsTaskId = plan.actions.some(action => 
       (action.type === 'update_task_status' || action.type === 'delete_task') && 
       !action.params.id
+    );
+    
+    // Check if plan needs pattern for bulk operations
+    const needsPattern = plan.actions.some(action => 
+      (action.type === 'bulk_delete_tasks' || action.type === 'bulk_update_tasks') && 
+      !action.params.pattern
     );
     
     if (needsTaskId) {
@@ -183,6 +253,40 @@ app.post('/api/agent/command', async (req, res, next) => {
       });
     }
     
+    if (needsPattern) {
+      // Set conversation state and ask for pattern
+      conversationStates.set(sessionId, {
+        type: 'awaiting_pattern',
+        plan: plan
+      });
+      
+      const actionType = plan.actions.find(action => 
+        (action.type === 'bulk_delete_tasks' || action.type === 'bulk_update_tasks')
+      )?.type;
+      
+      let message = "What keyword or pattern should I look for in the tasks?";
+      if (actionType === 'bulk_delete_tasks') {
+        message = "What keyword or pattern should I look for to delete matching tasks?";
+      } else if (actionType === 'bulk_update_tasks') {
+        message = "What keyword or pattern should I look for to update matching tasks?";
+      }
+      
+      io.emit('agent:message', { 
+        sessionId, 
+        message: message,
+        type: 'asking_pattern'
+      });
+      
+      // Clear AI processing state since we're waiting for user input
+      io.emit('agent:status', { sessionId, state: 'awaiting_input' });
+      
+      return res.json({ 
+        awaiting_input: true,
+        type: 'pattern',
+        message: message
+      });
+    }
+    
     // Check if plan needs confirmation (for conversational flow)
     if (plan.confirmations?.length > 0) {
       // Set conversation state and ask for confirmation
@@ -207,7 +311,7 @@ app.post('/api/agent/command', async (req, res, next) => {
       });
     }
     
-    const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations });
+    const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations, sessionId });
     
     io.emit('agent:status', { sessionId, state: 'done' });
     res.json({ plan, result });
