@@ -9,6 +9,8 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
   const [listening, setListening] = useState(false);
   const [paramReqs, setParamReqs] = useState([]); // {id, intent, missing, message}
   const [paramInputs, setParamInputs] = useState({});
+  const [conversationMessage, setConversationMessage] = useState(''); // New: for conversational messages
+  const [autoSubmitting, setAutoSubmitting] = useState(false); // New: for auto-submit feedback
 
   // Ensure sessionId is always available
   const effectiveSessionId = sessionId || 'anonymous';
@@ -24,8 +26,27 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
     socket.on('agent:needs_confirmation', (payload) => {
       speak('Confirmation required');
     });
+    socket.on('agent:message', (payload) => {
+      // Handle conversational messages
+      if (payload.type === 'asking_task_id') {
+        setConversationMessage(payload.message);
+        speak(payload.message);
+      } else if (payload.type === 'asking_confirmation') {
+        setConversationMessage(payload.message);
+        speak(payload.message);
+      } else if (payload.type === 'cancelled') {
+        setConversationMessage(payload.message);
+        speak(payload.message);
+        // Clear message after a delay
+        setTimeout(() => setConversationMessage(''), 3000);
+      }
+    });
     socket.on('agent:status', (payload) => {
       console.log('Agent status:', payload);
+      // Clear conversation message when done
+      if (payload.state === 'done') {
+        setConversationMessage('');
+      }
     });
     socket.on('agent:error', (payload) => {
       console.error('Agent error:', payload);
@@ -35,6 +56,7 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
       socket.off('agent:intent');
       socket.off('agent:needs_clarification');
       socket.off('agent:needs_confirmation');
+      socket.off('agent:message');
       socket.off('agent:status');
       socket.off('agent:error');
     };
@@ -50,7 +72,20 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
       const t = e.results[0][0].transcript;
       setText((x) => (x ? x + ' ' : '') + t);
     };
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      // Automatically submit after speech ends
+      setAutoSubmitting(true);
+      setTimeout(() => {
+        // Get the current text value from the input field
+        const inputElement = document.querySelector('input[type="text"]');
+        const currentText = inputElement?.value || text;
+        if (currentText.trim()) {
+          submit();
+        }
+        setAutoSubmitting(false);
+      }, 1000); // Slightly longer delay to ensure text is set
+    };
     rec.onerror = () => setListening(false);
     rec.start();
     recRef.current = rec;
@@ -129,7 +164,47 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
         </button>
       </div>
 
-      {paramReqs.length > 0 && (
+      {autoSubmitting && (
+        <div className="backdrop-blur-md bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-400/30 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <div className="text-sm font-medium text-green-300">Processing your voice command...</div>
+          </div>
+        </div>
+      )}
+
+      {conversationMessage && (
+        <div className={`backdrop-blur-md border rounded-xl p-4 ${
+          conversationMessage.includes('yes') || conversationMessage.includes('confirm') 
+            ? 'bg-gradient-to-r from-orange-500/20 to-red-500/20 border-orange-400/30' 
+            : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-400/30'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-2 h-2 rounded-full animate-pulse ${
+              conversationMessage.includes('yes') || conversationMessage.includes('confirm')
+                ? 'bg-orange-400'
+                : 'bg-blue-400'
+            }`}></div>
+            <div className={`text-sm font-medium ${
+              conversationMessage.includes('yes') || conversationMessage.includes('confirm')
+                ? 'text-orange-300'
+                : 'text-blue-300'
+            }`}>{conversationMessage}</div>
+          </div>
+          <div className={`text-xs mt-2 italic ${
+            conversationMessage.includes('yes') || conversationMessage.includes('confirm')
+              ? 'text-orange-200/70'
+              : 'text-blue-200/70'
+          }`}>
+            {conversationMessage.includes('yes') || conversationMessage.includes('confirm')
+              ? 'Type "yes" to confirm or "no" to cancel...'
+              : 'Type the task number and press Send...'
+            }
+          </div>
+        </div>
+      )}
+
+      {false && paramReqs.length > 0 && (
         <div className="space-y-3">
           {paramReqs.map((r) => (
             <div key={r.id} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4">
@@ -161,7 +236,7 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
         </div>
       )}
 
-      {confirmations.length > 0 && (
+      {false && confirmations.length > 0 && (
         <div className="space-y-3">
           {confirmations.map((c) => (
             <div key={c.confirmationToken || c.id} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between">
