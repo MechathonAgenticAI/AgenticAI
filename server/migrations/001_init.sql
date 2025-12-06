@@ -1,4 +1,4 @@
--- Enable vector extension
+-- Enable vector extension (kept for potential future use)
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Core tables
@@ -7,13 +7,6 @@ CREATE TABLE IF NOT EXISTS tasks (
   title text NOT NULL,
   description text DEFAULT '',
   status text DEFAULT 'todo',
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS notes (
-  id uuid PRIMARY KEY,
-  content text NOT NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -31,14 +24,3 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at timestamptz DEFAULT now()
 );
 
--- Embeddings store
-CREATE TABLE IF NOT EXISTS embeddings (
-  entity_type text NOT NULL,
-  entity_id uuid NOT NULL,
-  embedding vector(384) NOT NULL,
-  metadata jsonb DEFAULT '{}'::jsonb,
-  created_at timestamptz DEFAULT now(),
-  PRIMARY KEY (entity_type, entity_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_embeddings_cosine ON embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);

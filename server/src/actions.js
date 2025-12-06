@@ -1,5 +1,4 @@
 import { query } from './db.js';
-import { searchByVector, upsertEmbedding, deleteEmbedding } from './vector.js';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -60,41 +59,8 @@ async function executeAction(action, { io, pendingRequests }) {
       const { rows } = await query(`INSERT INTO tasks (id, title, description, status) VALUES ($1, $2, $3, 'todo') RETURNING *`, [id, title, description]);
       const task = rows[0];
       console.log('Task created:', task);
-      await upsertEmbedding('task', id, `${task.title} ${task.description}`, { status: task.status });
       io.emit('task:created', task);
       return { task };
-    }
-    case 'create_note': {
-      const { text } = action.params || {};
-      console.log('Creating note with text:', text);
-      if (!text) return requireParams(io, pendingRequests, action, ['text'], 'Provide note content.');
-      const id = uuidv4();
-      console.log('Inserting note with ID:', id);
-      const { rows } = await query(`INSERT INTO notes (id, content) VALUES ($1, $2) RETURNING *`, [id, text]);
-      const note = rows[0];
-      console.log('Note created:', note);
-      await upsertEmbedding('note', id, note.content, {});
-      io.emit('note:created', note);
-      return { note };
-    }
-    case 'delete_note': {
-      const { id } = action.params || {};
-      if (!id) return requireParams(io, pendingRequests, action, ['id'], 'Provide the note id to delete.');
-      const { rows } = await query(`DELETE FROM notes WHERE id = $1 RETURNING *`, [id]);
-      const note = rows[0];
-      await deleteEmbedding('note', id);
-      io.emit('note:deleted', note || { id });
-      return { ok: true, id };
-    }
-    case 'delete_all_notes': {
-      const { rows } = await query(`SELECT id FROM notes`);
-      const ids = rows.map(r => r.id);
-      await query(`DELETE FROM notes`);
-      for (const id of ids) {
-        try { await deleteEmbedding('note', id); } catch {}
-        io.emit('note:deleted', { id });
-      }
-      return { ok: true, count: ids.length };
     }
     default:
       throw new Error(`Unknown action type: ${action.type}`);

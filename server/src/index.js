@@ -4,11 +4,9 @@ import http from 'http';
 import cors from 'cors';
 import { Server as IOServer } from 'socket.io';
 import tasksRouterFactory from './routes/tasks.js';
-import notesRouterFactory from './routes/notes.js';
 import { parseIntent } from './intent.js';
 import { executePlan } from './actions.js';
 import { v4 as uuidv4 } from 'uuid';
-import { embedText } from './vector.js';
 import { query } from './db.js';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -33,7 +31,6 @@ io.on('connection', (socket) => {
 
 // Routers
 app.use('/api/tasks', tasksRouterFactory(io));
-app.use('/api/notes', notesRouterFactory(io));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -71,18 +68,6 @@ app.post('/api/agent/command', async (req, res, next) => {
     
     // status: received
     io.emit('agent:status', { sessionId, state: 'received' });
-    
-    // ensure session row exists
-    if (sessionId) {
-      try { await query(`INSERT INTO sessions (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [sessionId]); } catch {}
-    }
-    
-    // log command with embedding
-    try {
-      const vec = await embedText(text);
-      const vectorStr = '[' + vec.join(',') + ']';
-      await query(`INSERT INTO command_log (id, session_id, raw_command, embedding) VALUES ($1, $2, $3, $4::vector)`, [uuidv4(), sessionId || null, text, vectorStr]);
-    } catch {}
     
     const plan = await parseIntent(text, { sessionId });
     io.emit('agent:intent', plan);

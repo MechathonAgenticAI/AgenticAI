@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { query } from '../db.js';
-import { upsertEmbedding, deleteEmbedding } from '../vector.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function buildTasksRouter(io) {
@@ -23,7 +22,6 @@ export default function buildTasksRouter(io) {
         [id, title, description, status]
       );
       const task = rows[0];
-      await upsertEmbedding('task', id, `${task.title} ${task.description}`, { status: task.status });
       io.emit('tasks:created', task);
       res.status(201).json(task);
     } catch (e) { next(e); }
@@ -46,7 +44,6 @@ export default function buildTasksRouter(io) {
       const { rows } = await query(`UPDATE tasks SET ${updates.join(', ')}, updated_at = now() WHERE id = $${values.length} RETURNING *`, values);
       const task = rows[0];
       if (!task) return res.status(404).json({ error: 'not_found' });
-      await upsertEmbedding('task', id, `${task.title} ${task.description}`, { status: task.status });
       io.emit('tasks:updated', task);
       res.json(task);
     } catch (e) { next(e); }

@@ -1,9 +1,8 @@
 import { z } from 'zod';
-import { pipeline } from '@xenova/transformers';
+import { parseIntentWithAI } from './ai.js';
 
 export const AgentActionType = z.enum([
-  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks',
-  'create_note', 'delete_note', 'delete_all_notes'
+  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks'
 ]);
 
 export const AgentAction = z.object({
@@ -72,86 +71,23 @@ function basicHeuristic(text) {
     return plan;
   }
 
-  // notes
-  if (/\b(create|add|make)\b.*\bnote\b/.test(t)) {
-    const content = text.replace(/.*note\s*/i, '').trim();
-    plan.actions.push({ type: 'create_note', params: { text: content } });
-    return plan;
-  }
-
-  if (/\b(delete|remove)\b.*\bnote(s)?\b/.test(t)) {
-    if (/(all|everything|every)\b/.test(t)) {
-      plan.actions.push({ type: 'delete_all_notes', params: {} });
-      plan.confirmations.push('Delete ALL notes?');
-    } else {
-      plan.actions.push({ type: 'delete_note', params: {} });
-    }
-    return plan;
-  }
-
-  // fallback: return empty plan (will be handled by LLM)
+  // fallback: return empty plan (will be handled by AI)
   return plan;
 }
 
-let zscPromise;
-async function getClassifier() {
-  if (!zscPromise) {
-    zscPromise = pipeline('zero-shot-classification', 'Xenova/distilbert-base-uncased-mnli');
-  }
-  return zscPromise;
-}
-
-const ACTION_TYPES = [
-  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks',
-  'create_note', 'delete_note', 'delete_all_notes'
-];
-
 export async function parseIntent(text, { sessionId } = {}) {
-  // First try heuristic parsing
+  // Try heuristic parsing first for common patterns (fast)
   let plan = basicHeuristic(text);
   
-  // If heuristics didn't find actions, try LLM
+  // If heuristics didn't find actions, use AI
   if (plan.actions.length === 0) {
-    const classifier = await getClassifier().catch(() => null);
-    if (classifier) {
-      try {
-        const out = await classifier(text, ACTION_TYPES, { hypothesis_template: 'This text is about {}.' });
-        const topAction = Array.isArray(out.labels) ? out.labels[0] : out?.labels?.[0];
-        
-        if (topAction && ACTION_TYPES.includes(topAction)) {
-          let params = {};
-          if (topAction === 'create_task') {
-            const m = text.match(/task\s+(?:named\s+)?\"?([\w\s-]{3,80})\"?/i);
-            if (m?.[1]) params.title = m[1].trim();
-          }
-          if (topAction === 'create_note') {
-            params.text = text.replace(/.*note\s*/i, '').trim();
-          }
-          if (topAction === 'update_task_status' && /done|complete|finished/i.test(text)) {
-            params.status = 'done';
-          }
-          
-          plan.actions.push({ type: topAction, params });
-          
-          // Add confirmation for destructive actions
-          if (topAction === 'delete_all_tasks') {
-            plan.confirmations.push('Delete ALL tasks?');
-          } else if (topAction === 'delete_all_notes') {
-            plan.confirmations.push('Delete ALL notes?');
-          }
-        }
-      } catch (err) {
-        console.error('LLM classification error:', err);
-      }
+    try {
+      const aiResult = await parseIntentWithAI(text, { sessionId });
+      return AgentPlan.parse(aiResult);
+    } catch (error) {
+      console.error('AI parsing failed, falling back to empty plan:', error);
+      return AgentPlan.parse(plan);
     }
-  }
-
-  // Add session ID to all action params
-  if (sessionId) {
-    plan.actions = plan.actions.map(action => ({
-      ...action,
-      params: { ...action.params, sessionId }
-    }));
   }
 
   return AgentPlan.parse(plan);
