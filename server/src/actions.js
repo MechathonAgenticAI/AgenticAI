@@ -15,17 +15,6 @@ function requireParams(io, pendingRequests, action, missing, message) {
   const payload = { id, plan, missing, message };
   console.log('=== REQUIRING PARAMS ===');
   console.log('Request ID:', id);
-  console.log('Missing params:', missing);
-  console.log('Message:', message);
-  console.log('Action:', JSON.stringify(action, null, 2));
-  console.log('Plan:', JSON.stringify(plan, null, 2));
-  console.log('=== END PARAMS ===');
-  
-  pendingRequests.set(id, { plan, missing });
-  console.log('Stored pending request. Current pending requests:', Array.from(pendingRequests.keys()));
-  
-  try { io?.emit?.('agent:needs_clarification', payload); } catch {}
-  return { request_parameters: payload };
 }
 
 export async function executePlan(plan, { io, pendingRequests, pendingConfirmations, skipConfirmation = false }) {
@@ -69,7 +58,10 @@ async function executeAction(action, { io, pendingRequests }) {
     case 'create_task': {
       const { title, description = '' } = action.params || {};
       console.log('Creating task with title:', title);
-      if (!title) return requireParams(io, pendingRequests, action, ['title'], 'Provide a task title.');
+      if (!title) {
+        // Don't use requireParams - let conversational flow handle it
+        throw new Error('Task title is required');
+      }
       const id = uuidv4();
       console.log('Inserting task with ID:', id);
       const { rows } = await query(`INSERT INTO tasks (id, title, description, status) VALUES ($1, $2, $3, 'todo') RETURNING *`, [id, title, description]);
@@ -82,16 +74,9 @@ async function executeAction(action, { io, pendingRequests }) {
       const { id, status } = action.params || {};
       console.log('Updating task status:', { id, status });
       
-      if (!id && !status) {
-        return requireParams(io, pendingRequests, action, ['id', 'status'], 'Provide task ID and new status (done/todo).');
-      }
-      
-      if (!id) {
-        return requireParams(io, pendingRequests, action, ['id'], 'Provide the task ID to update.');
-      }
-      
-      if (!status) {
-        return requireParams(io, pendingRequests, action, ['status'], 'Provide the new status (done/todo).');
+      // Don't use requireParams - let conversational flow handle missing params
+      if (!id || !status) {
+        throw new Error('Task ID and status are required');
       }
       
       // Clean up the status - take only the first word and normalize
@@ -122,7 +107,11 @@ async function executeAction(action, { io, pendingRequests }) {
     case 'delete_task': {
       const { id } = action.params || {};
       console.log('Deleting task with ID:', id);
-      if (!id) return requireParams(io, pendingRequests, action, ['id'], 'Provide the task ID to delete.');
+      
+      // Don't use requireParams - let conversational flow handle missing params
+      if (!id) {
+        throw new Error('Task ID is required');
+      }
       
       // Handle both UUID and numeric IDs
       let taskId = id;

@@ -18,7 +18,11 @@ export const AgentPlan = z.object({
 
 function basicHeuristic(text) {
   const t = text.toLowerCase();
-  const plan = { actions: [], confirmations: [], meta: { text } };
+  const plan = { 
+    actions: [], 
+    confirmations: [], 
+    meta: { text: text.trim() }
+  };
 
   // Handle multi-intent patterns like "add task paint house and also add note to wake up early"
   const multiIntentMatch = t.match(/(?:add|create)\s+(task|note)\s+(.+?)\s+(?:and\s+(?:also\s+)?(?:add|create)\s+)?(task|note)\s+(.+)/i);
@@ -80,11 +84,8 @@ function basicHeuristic(text) {
         normalizedStatus = 'todo';
       }
       plan.actions.push({ type: 'update_task_status', params: { id: idMatch[1], status: normalizedStatus } });
-    } else if (idMatch) {
-      // Only ID provided - ask for status
-      plan.actions.push({ type: 'update_task_status', params: { id: idMatch[1] } });
     } else if (statusMatch) {
-      // Only status provided - update all tasks
+      // Only status provided - ask for task ID conversationally
       let normalizedStatus = statusMatch[1].toLowerCase();
       if (normalizedStatus === 'done' || normalizedStatus === 'complete' || normalizedStatus === 'completed' || normalizedStatus === 'finished') {
         normalizedStatus = 'done';
@@ -92,12 +93,18 @@ function basicHeuristic(text) {
         normalizedStatus = 'todo';
       }
       plan.actions.push({ type: 'update_task_status', params: { status: normalizedStatus } });
+    } else if (idMatch) {
+      // Only ID provided - ask for status
+      plan.actions.push({ type: 'update_task_status', params: { id: idMatch[1] } });
+    } else {
+      // Generic update task - ask for both
+      plan.actions.push({ type: 'update_task_status', params: {} });
     }
     return plan;
   }
 
   // delete task(s)
-  if (/\b(delete|remove)\b.*\btask(s)?\b/.test(t)) {
+  if (/\b(delete|remove)\b.*\b(task(s)?)\b/.test(t)) {
     const idMatch = t.match(/(?:task|with)\s+(?:id\s+)?(\d+)/i);
     
     // Destructive bulk delete requires confirmation
@@ -109,8 +116,9 @@ function basicHeuristic(text) {
       plan.actions.push({ type: 'delete_task', params: { id: idMatch[1] } });
       plan.confirmations.push(`Delete task #${idMatch[1]}?`);
     } else {
-      // Generic delete task - ask for ID first, then will require confirmation
+      // Generic delete task - ask for ID conversationally
       plan.actions.push({ type: 'delete_task', params: {} });
+      plan.confirmations.push('Which task would you like to delete?');
     }
     return plan;
   }
