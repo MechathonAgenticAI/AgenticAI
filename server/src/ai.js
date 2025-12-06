@@ -76,19 +76,24 @@ export async function parseIntentWithAI(text, { sessionId } = {}) {
     console.log(fullPrompt);
     console.log('---');
     
-    const response = await cohere.generate({
-      model: 'command',
-      prompt: fullPrompt,
+    const response = await cohere.chat({
+      model: 'command-nightly',
+      message: fullPrompt,
       maxTokens: 500,
       temperature: 0.1,
-      stopSequences: ['\n\n'],
     });
 
-    const aiText = response.generations[0].text.trim();
+    const aiText = response.text.trim();
     console.log('Raw Cohere response:', aiText);
     console.log('Response length:', aiText.length);
     
-    const result = JSON.parse(aiText);
+    // Extract JSON from the response
+    const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in AI response');
+    }
+    
+    const result = JSON.parse(jsonMatch[0]);
     console.log('Parsed AI result:', JSON.stringify(result, null, 2));
     console.log('=== AI PARSING END ===');
     

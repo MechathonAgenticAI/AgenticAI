@@ -22,6 +22,12 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
       speak(payload.message || 'I need more information to continue.');
     });
     socket.on('agent:needs_confirmation', (payload) => {
+      console.log('Received agent:needs_confirmation:', payload);
+      setConfirmations((prev) => {
+        // Check if this confirmation already exists and remove it first
+        const filtered = prev.filter(c => c.confirmationToken !== payload.confirmationToken);
+        return [payload, ...filtered];
+      });
       speak('Confirmation required');
     });
     socket.on('agent:status', (payload) => {
@@ -65,16 +71,34 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
   const send = async () => {
     if (!text.trim()) return;
     const { data } = await axios.post('http://localhost:4000/api/agent/command', { sessionId: effectiveSessionId, command: text });
-    if (data?.pending_confirmation) {
-      setConfirmations((prev) => [data.pending_confirmation, ...prev]);
-    }
     setText('');
   };
 
   const confirm = async (confirmationToken, approve) => {
-    const payload = approve ? { sessionId: effectiveSessionId, confirmationToken } : { sessionId: effectiveSessionId, confirmationToken, cancel: true };
-    await axios.post('http://localhost:4000/api/agent/confirm', payload);
-    setConfirmations((prev) => prev.filter((c) => c.confirmationToken !== confirmationToken));
+    try {
+      const payload = approve
+        ? { sessionId: effectiveSessionId, confirmationToken }
+        : { sessionId: effectiveSessionId, confirmationToken, cancel: true };
+
+      const { data } = await axios.post('http://localhost:4000/api/agent/confirm', payload);
+      console.log('Confirmation response:', data);
+
+      if (data?.ok || data?.success) {
+        setConfirmations((prev) => prev.filter((c) => c.confirmationToken !== confirmationToken));
+        if (data.cancelled) {
+          speak('Okay, I will not proceed.');
+        } else {
+          speak('Confirmation accepted.');
+        }
+      } else {
+        const message = data?.message || 'Confirmation failed.';
+        console.error('Confirmation failed:', message);
+        speak(message);
+      }
+    } catch (error) {
+      console.error('Error confirming action:', error);
+      speak('There was an error processing your confirmation.');
+    }
   };
 
   const speak = (message) => {
@@ -164,20 +188,20 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
       {confirmations.length > 0 && (
         <div className="space-y-3">
           {confirmations.map((c) => (
-            <div key={c.confirmationToken || c.id} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between">
+            <div key={`${c.confirmationToken}-${c.timestamp || Date.now()}`} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between">
               <div className="flex-1">
                 <div className="text-sm font-medium text-white/80 mb-2">Requires confirmation</div>
                 <pre className="text-xs bg-white/5 backdrop-blur-sm border border-white/10 p-3 rounded-lg max-h-40 overflow-auto text-white/60 font-mono">{JSON.stringify(c.plan || c.intent, null, 2)}</pre>
               </div>
               <div className="flex gap-2 ml-4">
                 <button 
-                  onClick={() => confirm(c.confirmationToken || c.id, true)} 
+                  onClick={() => confirm(c.confirmationToken, true)} 
                   className="inline-flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm"
                 >
                   <Check size={16}/>Confirm
                 </button>
                 <button 
-                  onClick={() => confirm(c.confirmationToken || c.id, false)} 
+                  onClick={() => confirm(c.confirmationToken, false)} 
                   className="inline-flex items-center gap-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-2 rounded-lg font-medium hover:from-gray-700 hover:to-gray-800 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm"
                 >
                   <X size={16}/>Cancel
@@ -190,7 +214,7 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
 
       <div className="space-y-3 max-h-64 overflow-y-auto">
         {intents.map((i, idx) => (
-          <div key={idx} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-3">
+          <div key={`${i.meta?.text || 'intent'}-${idx}-${Date.now()}`} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-3">
             <pre className="text-xs overflow-auto max-h-48 text-white/60 font-mono">{JSON.stringify(i, null, 2)}</pre>
           </div>
         ))}

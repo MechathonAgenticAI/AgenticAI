@@ -124,23 +124,18 @@ export async function parseIntent(text, { sessionId } = {}) {
   console.log('Input text:', text);
   console.log('Session ID:', sessionId);
   
-  // Try heuristic parsing first for common patterns (fast)
-  let plan = basicHeuristic(text);
-  console.log('Heuristic result:', JSON.stringify(plan, null, 2));
+  // Skip heuristic parsing - use AI only
+  // let plan = basicHeuristic(text);
+  // console.log('Heuristic result:', JSON.stringify(plan, null, 2));
   
-  // If heuristics didn't find actions, use AI
-  if (plan.actions.length === 0) {
-    console.log('No heuristic matches, trying AI...');
-    try {
-      const aiResult = await parseIntentWithAI(text, { sessionId });
-      console.log('AI result:', JSON.stringify(aiResult, null, 2));
-      return AgentPlan.parse(aiResult);
-    } catch (error) {
-      console.error('AI parsing failed, falling back to empty plan:', error);
-      return AgentPlan.parse(plan);
-    }
+  // Always use AI parsing
+  console.log('Using AI parsing...');
+  try {
+    const aiResult = await parseIntentWithAI(text, { sessionId });
+    console.log('AI result:', JSON.stringify(aiResult, null, 2));
+    return AgentPlan.parse(aiResult);
+  } catch (error) {
+    console.error('AI parsing failed, falling back to empty plan:', error);
+    return AgentPlan.parse({ actions: [], confirmations: [], meta: { text } });
   }
-
-  console.log('Using heuristic result');
-  return AgentPlan.parse(plan);
 }

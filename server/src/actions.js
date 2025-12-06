@@ -28,11 +28,11 @@ function requireParams(io, pendingRequests, action, missing, message) {
   return { request_parameters: payload };
 }
 
-export async function executePlan(plan, { io, pendingRequests, pendingConfirmations }) {
+export async function executePlan(plan, { io, pendingRequests, pendingConfirmations, skipConfirmation = false }) {
   console.log('Executing plan:', JSON.stringify(plan, null, 2));
   
   // Handle confirmations for destructive actions
-  if (plan.confirmations?.length > 0) {
+  if (!skipConfirmation && plan.confirmations?.length > 0) {
     const id = uuidv4();
     pendingConfirmations.set(id, { plan });
     const payload = { confirmationToken: id, plan, description: plan.confirmations.join('\n') };

@@ -87,21 +87,40 @@ app.post('/api/agent/command', async (req, res, next) => {
 app.post('/api/agent/confirm', async (req, res, next) => {
   try {
     const { sessionId, confirmationToken, cancel } = req.body || {};
+    console.log('=== CONFIRM REQUEST ===');
+    console.log('Session ID:', sessionId);
+    console.log('Confirmation token:', confirmationToken);
+    console.log('Cancel?', cancel);
+
     const pending = pendingConfirmations.get(confirmationToken);
-    if (!pending) return res.status(404).json({ error: 'not_found' });
+    if (!pending) {
+      console.warn('Confirmation token not found:', confirmationToken);
+      return res.status(404).json({ success: false, error: 'not_found' });
+    }
+
+    // Remove confirmation entry so it cannot be reused
     pendingConfirmations.delete(confirmationToken);
-    
+
     if (cancel === true) {
       io.emit('agent:needs_confirmation:cancelled', { confirmationToken });
       return res.json({ ok: true, cancelled: true });
     }
-    
-    io.emit('agent:status', { sessionId, state: 'executing' });
-    const result = await executePlan(pending.plan, { io, pendingRequests, pendingConfirmations });
-    io.emit('agent:status', { sessionId, state: 'done' });
-    io.emit('agent:needs_confirmation:applied', { confirmationToken, plan: pending.plan, result });
-    res.json({ ok: true, plan: pending.plan, result });
-  } catch (e) { next(e); }
+
+    try {
+      io.emit('agent:status', { sessionId, state: 'executing' });
+      const result = await executePlan(pending.plan, { io, pendingRequests, pendingConfirmations, skipConfirmation: true });
+      io.emit('agent:status', { sessionId, state: 'done' });
+      io.emit('agent:needs_confirmation:applied', { confirmationToken, plan: pending.plan, result });
+      return res.json({ ok: true, plan: pending.plan, result });
+    } catch (error) {
+      console.error('Error executing confirmed plan:', error);
+      io.emit('agent:error', { sessionId, message: 'Execution failed', error: error.message });
+      return res.status(500).json({ success: false, error: 'execution_failed', message: error.message });
+    }
+  } catch (e) {
+    console.error('Unexpected error in confirm handler:', e);
+    next(e);
+  }
 });
 
 app.post('/api/agent/continue', async (req, res, next) => {

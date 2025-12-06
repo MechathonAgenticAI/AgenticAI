@@ -54,7 +54,6 @@ export default function buildTasksRouter(io) {
       const { id } = req.params;
       const { rows } = await query('DELETE FROM tasks WHERE id = $1 RETURNING *', [id]);
       const task = rows[0];
-      await deleteEmbedding('task', id);
       io.emit('tasks:deleted', task || { id });
       res.json({ ok: true, id });
     } catch (e) { next(e); }
