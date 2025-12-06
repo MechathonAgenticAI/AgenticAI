@@ -89,7 +89,7 @@ app.post('/api/agent/command', async (req, res, next) => {
         
         // Execute the completed plan
         io.emit('agent:status', { sessionId, state: 'executing' });
-        const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations });
+        const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations, skipConfirmation: true });
         io.emit('agent:status', { sessionId, state: 'done' });
         
         return res.json({ plan: updatedPlan, result });
@@ -103,7 +103,7 @@ app.post('/api/agent/command', async (req, res, next) => {
           conversationStates.delete(sessionId);
           
           io.emit('agent:status', { sessionId, state: 'executing' });
-          const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations });
+          const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations, skipConfirmation: true });
           io.emit('agent:status', { sessionId, state: 'done' });
           
           return res.json({ plan, result });
@@ -138,6 +138,9 @@ app.post('/api/agent/command', async (req, res, next) => {
     // status: received
     io.emit('agent:status', { sessionId, state: 'received' });
     
+    // AI processing started
+    io.emit('agent:status', { sessionId, state: 'ai_processing' });
+    
     const plan = await parseIntent(text, { sessionId });
     io.emit('agent:intent', plan);
     
@@ -170,6 +173,9 @@ app.post('/api/agent/command', async (req, res, next) => {
         type: 'asking_task_id'
       });
       
+      // Clear AI processing state since we're waiting for user input
+      io.emit('agent:status', { sessionId, state: 'awaiting_input' });
+      
       return res.json({ 
         awaiting_input: true,
         type: 'task_id',
@@ -190,6 +196,9 @@ app.post('/api/agent/command', async (req, res, next) => {
         message: plan.confirmations[0] + " (Type 'yes' to confirm or 'no' to cancel)",
         type: 'asking_confirmation'
       });
+      
+      // Clear AI processing state since we're waiting for user input
+      io.emit('agent:status', { sessionId, state: 'awaiting_input' });
       
       return res.json({ 
         awaiting_input: true,

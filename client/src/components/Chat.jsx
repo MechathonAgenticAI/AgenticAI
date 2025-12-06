@@ -11,6 +11,7 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
   const [paramInputs, setParamInputs] = useState({});
   const [conversationMessage, setConversationMessage] = useState(''); // New: for conversational messages
   const [autoSubmitting, setAutoSubmitting] = useState(false); // New: for auto-submit feedback
+  const [aiProcessing, setAiProcessing] = useState(false); // New: for AI processing loading
 
   // Ensure sessionId is always available
   const effectiveSessionId = sessionId || 'anonymous';
@@ -33,25 +34,39 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
       speak('Confirmation required');
     });
     socket.on('agent:message', (payload) => {
-      // Handle conversational messages
-      if (payload.type === 'asking_task_id') {
-        setConversationMessage(payload.message);
-        speak(payload.message);
-      } else if (payload.type === 'asking_confirmation') {
-        setConversationMessage(payload.message);
+      console.log('Received agent:message:', payload);
+      setConversationMessage(payload.message);
+      
+      // Clear AI processing when showing conversation messages
+      setAiProcessing(false);
+      
+      if (payload.type === 'asking_confirmation') {
         speak(payload.message);
       } else if (payload.type === 'cancelled') {
         setConversationMessage(payload.message);
         speak(payload.message);
         // Clear message after a delay
         setTimeout(() => setConversationMessage(''), 3000);
+      } else {
+        speak(payload.message);
       }
     });
     socket.on('agent:status', (payload) => {
       console.log('Agent status:', payload);
+      // Handle AI processing state
+      if (payload.state === 'ai_processing') {
+        setAiProcessing(true);
+      }
+      // Clear AI processing when waiting for user input
+      if (payload.state === 'awaiting_input') {
+        setAiProcessing(false);
+      }
       // Clear conversation message when done
       if (payload.state === 'done') {
         setConversationMessage('');
+        setAiProcessing(false);
+      } else if (payload.state === 'executing') {
+        setAiProcessing(false);
       }
     });
     socket.on('agent:error', (payload) => {
@@ -105,8 +120,14 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
 
   const send = async () => {
     if (!text.trim()) return;
-    const { data } = await axios.post('http://localhost:4000/api/agent/command', { sessionId: effectiveSessionId, command: text });
-    setText('');
+    setAiProcessing(true);
+    try {
+      const { data } = await axios.post('http://localhost:4000/api/agent/command', { sessionId: effectiveSessionId, command: text });
+      setText('');
+    } catch (error) {
+      console.error('Error sending command:', error);
+      setAiProcessing(false);
+    }
   };
 
   const confirm = async (confirmationToken, approve) => {
@@ -164,17 +185,23 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
       
       <div className="flex gap-3">
         <input 
-          className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent backdrop-blur-sm transition-all duration-200" 
+          className={`flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent backdrop-blur-sm transition-all duration-200 ${
+            aiProcessing ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
           placeholder="Tell the agent what to do..." 
           value={text} 
           onChange={(e)=>setText(e.target.value)} 
-          onKeyDown={(e)=>{if(e.key==='Enter') send();}} 
+          onKeyDown={(e)=>{if(e.key==='Enter' && !aiProcessing) send();}} 
+          disabled={aiProcessing}
         />
         <button 
           onClick={send} 
-          className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm"
+          disabled={aiProcessing}
+          className={`inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-lg font-medium transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm ${
+            aiProcessing ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         >
-          <Send size={18} /> Send
+          <Send size={18} /> {aiProcessing ? 'Processing...' : 'Send'}
         </button>
         <button 
           onClick={listening ? stopVoice : startVoice} 
@@ -187,6 +214,15 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
           <Mic size={18} /> {listening ? 'Stop' : 'Speak'}
         </button>
       </div>
+
+      {aiProcessing && (
+        <div className="backdrop-blur-md bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+            <div className="text-sm font-medium text-purple-300">AI is processing your request...</div>
+          </div>
+        </div>
+      )}
 
       {autoSubmitting && (
         <div className="backdrop-blur-md bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-400/30 rounded-xl p-4">
