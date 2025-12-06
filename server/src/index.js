@@ -106,10 +106,18 @@ app.post('/api/agent/confirm', async (req, res, next) => {
 
 app.post('/api/agent/continue', async (req, res, next) => {
   try {
+    console.log('=== CONTINUE ENDPOINT ===');
+    console.log('Current pending requests before:', Array.from(pendingRequests.keys()));
+    
     const { sessionId, id, params } = req.body || {};
+    console.log('Continue request:', { sessionId, id, params });
+    
     const pending = pendingRequests.get(id);
-    if (!pending) return res.status(404).json({ error: 'not_found' });
-    pendingRequests.delete(id);
+    console.log('Found pending request:', pending);
+    if (!pending) {
+      console.log('Pending request not found for ID:', id);
+      return res.status(404).json({ error: 'not_found' });
+    }
     
     // Update the plan with the missing parameters
     const updatedPlan = { ...pending.plan };
@@ -118,9 +126,20 @@ app.post('/api/agent/continue', async (req, res, next) => {
       params: { ...action.params, ...params }
     }));
     
+    console.log('Updated plan:', JSON.stringify(updatedPlan, null, 2));
+    
     const result = await executePlan(updatedPlan, { io, pendingRequests, pendingConfirmations });
+    console.log('Execution result:', JSON.stringify(result, null, 2));
+    
+    // Only delete after successful execution
+    pendingRequests.delete(id);
+    console.log('Deleted pending request. Remaining requests:', Array.from(pendingRequests.keys()));
+    
     res.json({ ok: true, plan: updatedPlan, result });
-  } catch (e) { next(e); }
+  } catch (e) { 
+    console.error('Continue endpoint error:', e);
+    next(e); 
+  }
 });
 
 // Error handler

@@ -59,13 +59,57 @@ function basicHeuristic(text) {
     return plan;
   }
 
+  // update task undone/todo
+  if (/(mark|set|update|reopen|reactivate).*\b(task)\b.*\b(todo|undone|not done|incomplete|pending|open)\b/.test(t)) {
+    plan.actions.push({ type: 'update_task_status', params: { status: 'todo' } });
+    return plan;
+  }
+
+  // update task by id or name
+  if (/\b(update|change|modify)\b.*\b(task)\b/.test(t)) {
+    const idMatch = t.match(/(?:task|with)\s+(?:id\s+)?(\d+)/i);
+    const statusMatch = t.match(/(?:to|as)\s+(done|todo|complete|completed|finished|undone|not done|incomplete)/i);
+    const titleMatch = t.match(/(?:named|titled|called)\s+"?([^"]+)"?\s+(?:to|as)\s+"?([^"]+)"?/i);
+    
+    if (idMatch && statusMatch) {
+      // Normalize status values
+      let normalizedStatus = statusMatch[1].toLowerCase();
+      if (normalizedStatus === 'done' || normalizedStatus === 'complete' || normalizedStatus === 'completed' || normalizedStatus === 'finished') {
+        normalizedStatus = 'done';
+      } else if (normalizedStatus === 'todo' || normalizedStatus === 'undone' || normalizedStatus === 'not done' || normalizedStatus === 'incomplete') {
+        normalizedStatus = 'todo';
+      }
+      plan.actions.push({ type: 'update_task_status', params: { id: idMatch[1], status: normalizedStatus } });
+    } else if (idMatch) {
+      // Only ID provided - ask for status
+      plan.actions.push({ type: 'update_task_status', params: { id: idMatch[1] } });
+    } else if (statusMatch) {
+      // Only status provided - update all tasks
+      let normalizedStatus = statusMatch[1].toLowerCase();
+      if (normalizedStatus === 'done' || normalizedStatus === 'complete' || normalizedStatus === 'completed' || normalizedStatus === 'finished') {
+        normalizedStatus = 'done';
+      } else if (normalizedStatus === 'todo' || normalizedStatus === 'undone' || normalizedStatus === 'not done' || normalizedStatus === 'incomplete') {
+        normalizedStatus = 'todo';
+      }
+      plan.actions.push({ type: 'update_task_status', params: { status: normalizedStatus } });
+    }
+    return plan;
+  }
+
   // delete task(s)
   if (/\b(delete|remove)\b.*\btask(s)?\b/.test(t)) {
+    const idMatch = t.match(/(?:task|with)\s+(?:id\s+)?(\d+)/i);
+    
     // Destructive bulk delete requires confirmation
-    if (/(all|everything|every)\b/.test(t) || !/\b(id|named|titled)\b/.test(t)) {
+    if (/(all|everything|every)\b/.test(t)) {
       plan.actions.push({ type: 'delete_all_tasks', params: {} });
       plan.confirmations.push('Delete ALL tasks?');
+    } else if (idMatch) {
+      // Specific task deletion with ID - requires confirmation
+      plan.actions.push({ type: 'delete_task', params: { id: idMatch[1] } });
+      plan.confirmations.push(`Delete task #${idMatch[1]}?`);
     } else {
+      // Generic delete task - ask for ID first, then will require confirmation
       plan.actions.push({ type: 'delete_task', params: {} });
     }
     return plan;
@@ -76,13 +120,20 @@ function basicHeuristic(text) {
 }
 
 export async function parseIntent(text, { sessionId } = {}) {
+  console.log('=== PARSING INTENT ===');
+  console.log('Input text:', text);
+  console.log('Session ID:', sessionId);
+  
   // Try heuristic parsing first for common patterns (fast)
   let plan = basicHeuristic(text);
+  console.log('Heuristic result:', JSON.stringify(plan, null, 2));
   
   // If heuristics didn't find actions, use AI
   if (plan.actions.length === 0) {
+    console.log('No heuristic matches, trying AI...');
     try {
       const aiResult = await parseIntentWithAI(text, { sessionId });
+      console.log('AI result:', JSON.stringify(aiResult, null, 2));
       return AgentPlan.parse(aiResult);
     } catch (error) {
       console.error('AI parsing failed, falling back to empty plan:', error);
@@ -90,5 +141,6 @@ export async function parseIntent(text, { sessionId } = {}) {
     }
   }
 
+  console.log('Using heuristic result');
   return AgentPlan.parse(plan);
 }

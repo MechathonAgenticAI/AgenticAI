@@ -100,62 +100,98 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
   };
 
   return (
-    <div className="border rounded-lg p-4 space-y-4">
-      <h2 className="font-semibold">Agent</h2>
-      <div className="flex gap-2">
-        <input className="flex-1 border rounded px-3 py-2" placeholder="Tell the agent what to do..." value={text} onChange={(e)=>setText(e.target.value)} onKeyDown={(e)=>{if(e.key==='Enter') send();}} />
-        <button onClick={send} className="inline-flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded">
-          <Send size={16} /> Send
+    <div className="backdrop-blur-lg bg-white/10 border border-white/20 rounded-2xl p-6 shadow-2xl space-y-6">
+      <h2 className="text-2xl font-bold text-white bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Agent</h2>
+      
+      <div className="flex gap-3">
+        <input 
+          className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent backdrop-blur-sm transition-all duration-200" 
+          placeholder="Tell the agent what to do..." 
+          value={text} 
+          onChange={(e)=>setText(e.target.value)} 
+          onKeyDown={(e)=>{if(e.key==='Enter') send();}} 
+        />
+        <button 
+          onClick={send} 
+          className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm"
+        >
+          <Send size={18} /> Send
         </button>
-        <button onClick={listening ? stopVoice : startVoice} className={`inline-flex items-center gap-2 ${listening? 'bg-red-600':'bg-gray-800'} text-white px-3 py-2 rounded`}>
-          <Mic size={16} /> {listening ? 'Stop' : 'Speak'}
+        <button 
+          onClick={listening ? stopVoice : startVoice} 
+          className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm ${
+            listening 
+              ? 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white' 
+              : 'bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white'
+          }`}
+        >
+          <Mic size={18} /> {listening ? 'Stop' : 'Speak'}
         </button>
       </div>
 
       {paramReqs.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {paramReqs.map((r) => (
-            <div key={r.id} className="border rounded p-3">
-              <div className="text-sm text-gray-600">Missing parameters</div>
-              {r.message && <div className="text-sm mb-2">{r.message}</div>}
-              <div className="grid grid-cols-2 gap-2">
+            <div key={r.id} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4">
+              <div className="text-sm font-medium text-white/80 mb-2">Missing parameters</div>
+              {r.message && <div className="text-sm text-white/70 mb-3 italic">{r.message}</div>}
+              <div className="grid grid-cols-2 gap-3">
                 {(r.missing || []).map((m) => (
                   <div key={m} className="flex items-center gap-2">
-                    <label className="text-xs w-24 capitalize">{m}</label>
-                    <input className="flex-1 border rounded px-2 py-1 text-sm" value={(paramInputs[r.id]?.[m] ?? '')} onChange={(e)=>setParam(r.id, m, e.target.value)} />
+                    <label className="text-xs text-white/60 w-20 capitalize font-mono">{m}</label>
+                    <input 
+                      className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent backdrop-blur-sm" 
+                      value={(paramInputs[r.id]?.[m] ?? '')} 
+                      onChange={(e)=>setParam(r.id, m, e.target.value)} 
+                    />
                   </div>
                 ))}
               </div>
-              <div className="mt-2">
-                <button onClick={() => continueFlow(r.id)} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">Continue</button>
+              <div className="mt-4">
+                <button 
+                  onClick={() => continueFlow(r.id)} 
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-2 rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm"
+                >
+                  Continue
+                </button>
               </div>
-              <pre className="text-xs bg-gray-50 p-2 rounded max-h-40 overflow-auto mt-2">{JSON.stringify(r.intent, null, 2)}</pre>
+              <pre className="text-xs bg-white/5 backdrop-blur-sm border border-white/10 p-3 rounded-lg max-h-40 overflow-auto mt-3 text-white/60 font-mono">{JSON.stringify(r.intent, null, 2)}</pre>
             </div>
           ))}
         </div>
       )}
 
       {confirmations.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {confirmations.map((c) => (
-            <div key={c.confirmationToken || c.id} className="border rounded p-3 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-gray-600">Requires confirmation</div>
-                <pre className="text-xs bg-gray-50 p-2 rounded max-h-40 overflow-auto">{JSON.stringify(c.plan || c.intent, null, 2)}</pre>
+            <div key={c.confirmationToken || c.id} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between">
+              <div className="flex-1">
+                <div className="text-sm font-medium text-white/80 mb-2">Requires confirmation</div>
+                <pre className="text-xs bg-white/5 backdrop-blur-sm border border-white/10 p-3 rounded-lg max-h-40 overflow-auto text-white/60 font-mono">{JSON.stringify(c.plan || c.intent, null, 2)}</pre>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => confirm(c.confirmationToken || c.id, true)} className="inline-flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded text-sm"><Check size={14}/>Confirm</button>
-                <button onClick={() => confirm(c.confirmationToken || c.id, false)} className="inline-flex items-center gap-1 bg-gray-200 px-2 py-1 rounded text-sm"><X size={14}/>Cancel</button>
+              <div className="flex gap-2 ml-4">
+                <button 
+                  onClick={() => confirm(c.confirmationToken || c.id, true)} 
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm"
+                >
+                  <Check size={16}/>Confirm
+                </button>
+                <button 
+                  onClick={() => confirm(c.confirmationToken || c.id, false)} 
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-2 rounded-lg font-medium hover:from-gray-700 hover:to-gray-800 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm"
+                >
+                  <X size={16}/>Cancel
+                </button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-3 max-h-64 overflow-y-auto">
         {intents.map((i, idx) => (
-          <div key={idx} className="bg-gray-50 rounded p-2">
-            <pre className="text-xs overflow-auto max-h-48">{JSON.stringify(i, null, 2)}</pre>
+          <div key={idx} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-3">
+            <pre className="text-xs overflow-auto max-h-48 text-white/60 font-mono">{JSON.stringify(i, null, 2)}</pre>
           </div>
         ))}
       </div>

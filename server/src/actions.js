@@ -4,10 +4,26 @@ import { v4 as uuidv4 } from 'uuid';
 
 const UpdateTaskParams = z.object({ id: z.string().uuid().optional(), status: z.string().optional(), title: z.string().optional(), description: z.string().optional(), query: z.string().optional() });
 
-function requireParams(io, pendingRequests, plan, missing, message) {
+function requireParams(io, pendingRequests, action, missing, message) {
   const id = uuidv4();
+  // Create a proper plan object with the single action
+  const plan = {
+    actions: [action],
+    confirmations: [],
+    meta: { text: `Missing parameters: ${missing.join(', ')}` }
+  };
   const payload = { id, plan, missing, message };
+  console.log('=== REQUIRING PARAMS ===');
+  console.log('Request ID:', id);
+  console.log('Missing params:', missing);
+  console.log('Message:', message);
+  console.log('Action:', JSON.stringify(action, null, 2));
+  console.log('Plan:', JSON.stringify(plan, null, 2));
+  console.log('=== END PARAMS ===');
+  
   pendingRequests.set(id, { plan, missing });
+  console.log('Stored pending request. Current pending requests:', Array.from(pendingRequests.keys()));
+  
   try { io?.emit?.('agent:needs_clarification', payload); } catch {}
   return { request_parameters: payload };
 }
@@ -61,6 +77,82 @@ async function executeAction(action, { io, pendingRequests }) {
       console.log('Task created:', task);
       io.emit('task:created', task);
       return { task };
+    }
+    case 'update_task_status': {
+      const { id, status } = action.params || {};
+      console.log('Updating task status:', { id, status });
+      
+      if (!id && !status) {
+        return requireParams(io, pendingRequests, action, ['id', 'status'], 'Provide task ID and new status (done/todo).');
+      }
+      
+      if (!id) {
+        return requireParams(io, pendingRequests, action, ['id'], 'Provide the task ID to update.');
+      }
+      
+      if (!status) {
+        return requireParams(io, pendingRequests, action, ['status'], 'Provide the new status (done/todo).');
+      }
+      
+      // Clean up the status - take only the first word and normalize
+      const cleanStatus = status.toString().split('/')[0].trim().toLowerCase();
+      const normalizedStatus = (cleanStatus === 'done' || cleanStatus === 'complete' || cleanStatus === 'completed') ? 'done' : 'todo';
+      
+      console.log('Cleaned status:', normalizedStatus);
+      
+      // Handle both UUID and numeric IDs
+      let taskId = id;
+      if (!id.includes('-')) {
+        // Numeric ID provided, need to find the actual UUID
+        const { rows: taskRows } = await query(`SELECT id FROM tasks ORDER BY created_at LIMIT 1 OFFSET $1`, [parseInt(id) - 1]);
+        if (taskRows.length === 0) {
+          throw new Error('Task not found with numeric ID: ' + id);
+        }
+        taskId = taskRows[0].id;
+        console.log('Mapped numeric ID', id, 'to UUID:', taskId);
+      }
+      
+      const { rows } = await query(`UPDATE tasks SET status = $1, updated_at = now() WHERE id = $2 RETURNING *`, [normalizedStatus, taskId]);
+      const task = rows[0];
+      if (!task) throw new Error('Task not found');
+      console.log('Task updated:', task);
+      io.emit('task:updated', task);
+      return { task };
+    }
+    case 'delete_task': {
+      const { id } = action.params || {};
+      console.log('Deleting task with ID:', id);
+      if (!id) return requireParams(io, pendingRequests, action, ['id'], 'Provide the task ID to delete.');
+      
+      // Handle both UUID and numeric IDs
+      let taskId = id;
+      if (!id.includes('-')) {
+        // Numeric ID provided, need to find the actual UUID
+        const { rows: taskRows } = await query(`SELECT id FROM tasks ORDER BY created_at LIMIT 1 OFFSET $1`, [parseInt(id) - 1]);
+        if (taskRows.length === 0) {
+          throw new Error('Task not found with numeric ID: ' + id);
+        }
+        taskId = taskRows[0].id;
+        console.log('Mapped numeric ID', id, 'to UUID:', taskId);
+      }
+      
+      const { rows } = await query(`DELETE FROM tasks WHERE id = $1 RETURNING *`, [taskId]);
+      const task = rows[0];
+      if (!task) throw new Error('Task not found');
+      console.log('Task deleted:', task);
+      io.emit('task:deleted', task);
+      return { ok: true, deleted: task };
+    }
+    case 'delete_all_tasks': {
+      console.log('Deleting ALL tasks');
+      const { rows } = await query(`SELECT id FROM tasks`);
+      const ids = rows.map(r => r.id);
+      await query(`DELETE FROM tasks`);
+      console.log('Deleted tasks:', ids);
+      for (const id of ids) {
+        io.emit('task:deleted', { id });
+      }
+      return { ok: true, count: ids.length };
     }
     default:
       throw new Error(`Unknown action type: ${action.type}`);
