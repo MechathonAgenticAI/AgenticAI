@@ -95,15 +95,18 @@ export async function createCalendarEvent(sessionId, taskTitle, deadline, descri
 
   const calendar = google.calendar({ version: 'v3', auth });
 
+  const startTime = new Date(deadline);
+  const endTime = new Date(startTime.getTime() + 30 * 60000); // 30 minutes later
+
   const event = {
     summary: `Task Reminder: ${taskTitle}`,
     description: description || `Reminder for task: ${taskTitle}`,
     start: {
-      dateTime: deadline,
+      dateTime: startTime.toISOString(),
       timeZone: 'UTC'
     },
     end: {
-      dateTime: new Date(new Date(deadline).getTime() + 30 * 60000).toISOString(), // 30 minutes later
+      dateTime: endTime.toISOString(),
       timeZone: 'UTC'
     },
     reminders: {
@@ -138,10 +141,13 @@ export async function createGoogleTask(sessionId, taskTitle, deadline, notes = '
 
   const tasks = google.tasks({ version: 'v1', auth });
 
+  // Convert deadline to RFC3339 format (YYYY-MM-DDTHH:MM:SSZ)
+  const dueDate = new Date(deadline).toISOString();
+
   const task = {
     title: taskTitle,
     notes: notes || `Created from accountability system`,
-    due: deadline
+    due: dueDate
   };
 
   try {
@@ -234,7 +240,7 @@ async function getGoogleAuth(sessionId) {
 
     return oauth2Client;
   } catch (error) {
-    console.error('Error loading Google auth:', error);
+    console.error('Error loading Google auth (table might not exist):', error);
     return null;
   }
 }
@@ -276,17 +282,18 @@ export async function initializeIntegrationsDB() {
   try {
     await query(`
       CREATE TABLE IF NOT EXISTS user_integrations (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id VARCHAR(255) NOT NULL,
-        service VARCHAR(50) NOT NULL,
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        service TEXT NOT NULL,
         access_token TEXT,
         refresh_token TEXT,
-        expires_at TIMESTAMP WITH TIME ZONE,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        UNIQUE(user_id, service)
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
       );
-      
+    `);
+    
+    await query(`
       CREATE INDEX IF NOT EXISTS idx_user_integrations_user_service ON user_integrations(user_id, service);
     `);
     
@@ -294,4 +301,110 @@ export async function initializeIntegrationsDB() {
   } catch (error) {
     console.error('Failed to initialize integrations DB:', error);
   }
+}
+
+export { getGoogleAuth };
+
+// Get all events from Google Calendar
+export async function getGoogleCalendarEvents(sessionId, filters = {}) {
+  const auth = await getGoogleAuth(sessionId);
+  if (!auth) {
+    throw new Error('Google Calendar not connected');
+  }
+
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  try {
+    // Build time range for query
+    const now = new Date();
+    let timeMin, timeMax;
+
+    if (filters.startDate && filters.endDate) {
+      timeMin = new Date(filters.startDate).toISOString();
+      timeMax = new Date(filters.endDate + 'T23:59:59').toISOString();
+    } else if (filters.date) {
+      // Handle specific date
+      const targetDate = new Date(filters.date);
+      timeMin = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).toISOString();
+      timeMax = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59).toISOString();
+    } else {
+      // Default to current month
+      timeMin = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      timeMax = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+    }
+
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: 'startTime'
+    });
+
+    const events = response.data.items || [];
+    return events.map(event => ({
+      id: event.id,
+      summary: event.summary,
+      description: event.description,
+      start: event.start,
+      end: event.end,
+      reminders: event.reminders
+    }));
+  } catch (error) {
+    console.error('Failed to fetch Google Calendar events:', error);
+    throw error;
+  }
+}
+
+// Delete multiple calendar events
+export async function bulkDeleteCalendarEvents(sessionId, eventIds) {
+  const auth = await getGoogleAuth(sessionId);
+  if (!auth) {
+    throw new Error('Google Calendar not connected');
+  }
+
+  const calendar = google.calendar({ version: 'v3', auth });
+  const results = { deleted: [], failed: [] };
+
+  for (const eventId of eventIds) {
+    try {
+      await calendar.events.delete({
+        calendarId: 'primary',
+        eventId: eventId
+      });
+      results.deleted.push(eventId);
+    } catch (error) {
+      console.error(`Failed to delete event ${eventId}:`, error);
+      results.failed.push({ eventId, error: error.message });
+    }
+  }
+
+  return results;
+}
+
+// Update multiple calendar events
+export async function bulkUpdateCalendarEvents(sessionId, updates) {
+  const auth = await getGoogleAuth(sessionId);
+  if (!auth) {
+    throw new Error('Google Calendar not connected');
+  }
+
+  const calendar = google.calendar({ version: 'v3', auth });
+  const results = { updated: [], failed: [] };
+
+  for (const update of updates) {
+    try {
+      const response = await calendar.events.update({
+        calendarId: 'primary',
+        eventId: update.eventId,
+        requestBody: update.eventData
+      });
+      results.updated.push(response.data);
+    } catch (error) {
+      console.error(`Failed to update event ${update.eventId}:`, error);
+      results.failed.push({ eventId: update.eventId, error: error.message });
+    }
+  }
+
+  return results;
 }

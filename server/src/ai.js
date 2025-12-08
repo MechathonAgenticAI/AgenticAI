@@ -202,3 +202,5 @@ export async function parseIntentWithAI(text, { sessionId, context } = {}) {
     };
   }
 }
+
+export { cohere };

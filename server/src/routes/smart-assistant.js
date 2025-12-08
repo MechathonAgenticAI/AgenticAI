@@ -1,7 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
-import { createTaskReminders, getGoogleAuth } from '../google-integration.js';
+import { createTaskReminders, getGoogleAuth, getGoogleCalendarEvents, bulkDeleteCalendarEvents, bulkUpdateCalendarEvents } from '../google-integration.js';
 import { google } from 'googleapis';
 import { cohere } from '../ai.js';
 
@@ -96,7 +96,7 @@ async function analyzeCommandWithAI(command, sessionId) {
   }
   
   const prompt = `
-You are an AI assistant that analyzes user commands for calendar and task management. 
+You are an AI assistant that analyzes user commands for calendar and task management.
 
 Analyze this command: "${command}"
 
@@ -107,14 +107,21 @@ Respond with a JSON object containing:
   "parameters": {
     "title": "extracted title if creating",
     "time": "extracted time like '5pm', '2:30pm'",
-    "date": "extracted date like 'today', 'tomorrow', 'Thursday'",
-    "dateRange": "if mentioned like 'this week', 'next week'",
+    "date": "extracted date like 'today', 'tomorrow', 'Thursday', '13 December'",
+    "dateRange": "if mentioned like '14dec to 20 dec', 'this week'",
     "timeRange": {"start": "1pm", "end": "3pm"} if mentioned,
-    "shiftAmount": number if shifting,
+    "shiftAmount": number if shifting (CALCULATE THIS EXACTLY),
     "shiftUnit": "days|weeks" if shifting,
     "taskType": "study|work|exercise|meeting" if specified,
     "newTime": "updated time like '9am'" if updating,
     "count": number if creating multiple
+  },
+  "filters": {
+    "date": "specific date like 'Monday', 'Thursday'",
+    "dateRange": "range like 'this week'",
+    "timeRange": {"start": "1pm", "end": "3pm"} if mentioned,
+    "taskType": "study|work|exercise|meeting" if specified,
+    "keywords": ["keyword1", "keyword2"] if mentioned
   },
   "needsMoreInfo": true|false,
   "missingParameters": ["parameter1", "parameter2"],
@@ -122,7 +129,26 @@ Respond with a JSON object containing:
   "examples": ["example command 1", "example command 2"]
 }
 
+IMPORTANT CALCULATION RULES:
+- For shift commands, ALWAYS calculate the POSITIVE shift amount:
+  * "Monday to Sunday" = 6 days (forward from Monday to Sunday)
+  * "Friday to Monday" = 3 days (forward to next week Monday)
+  * "Wednesday to Saturday" = 3 days
+  * "Sunday to Wednesday" = 3 days
+  * "shift 2 days ahead" = shiftAmount: 2
+  * "move to tomorrow" = shiftAmount: 1
+  * NEVER use negative shift amounts - always count forward in the week
+  * Monday=1, Tuesday=2, Wednesday=3, Thursday=4, Friday=5, Saturday=6, Sunday=7
+  * Formula: (target_day - source_day + 7) % 7 or add 7 if target < source
+- For date ranges, extract start and end dates
+- For time ranges, extract both start and end times
+- If shifting TO a specific date, put that date in parameters.date
+
 Important:
+- For delete commands, put the date in both parameters.date and filters.date
+- For shift commands, calculate the correct shift amount and put it in shiftAmount
+- For shift commands, put source date in filters.date and target in parameters.date if specified
+- For list commands, put filter criteria in filters
 - If command is unclear, set needsMoreInfo: true and explain what's needed
 - For time ranges, extract both start and end times
 - For shifting, detect both amount and unit (days/weeks)
@@ -135,15 +161,29 @@ Respond ONLY with valid JSON, no explanations.
 
   try {
     console.log('Calling Cohere AI...');
+    console.log('Cohere client type:', typeof cohere);
+    console.log('Cohere client methods:', Object.getOwnPropertyNames(cohere));
+    
     const response = await cohere.chat({
-      model: 'command-r-plus-08-2024',
+      model: 'command-nightly',
       message: prompt,
       maxTokens: 1000,
       temperature: 0.1,
     });
 
-    const aiResponse = response.message;
+    console.log('Cohere response received:', typeof response);
+    console.log('Cohere response keys:', response ? Object.keys(response) : 'null');
+    
+    if (!response) {
+      throw new Error('Cohere returned null response');
+    }
+    
+    const aiResponse = response.text;
     console.log('Raw AI Response:', aiResponse);
+    
+    if (!aiResponse) {
+      throw new Error('Cohere returned empty response');
+    }
     
     // Extract JSON from AI response
     const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
@@ -159,6 +199,7 @@ Respond ONLY with valid JSON, no explanations.
   } catch (error) {
     console.error('AI analysis failed:', error);
     console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
     throw error; // Let it fall back to pattern matching
   }
 }
@@ -169,18 +210,18 @@ async function executeAICommand(analysis, sessionId, originalCommand) {
   switch (action) {
     case 'create_reminder':
       return await createAIReminder(parameters, sessionId, originalCommand);
-      
+    
     case 'delete_reminders':
-      return await deleteRemindersByFilters(sessionId, filters, parameters);
-      
+      return await deleteCalendarReminders(parameters || filters, sessionId, originalCommand);
+    
     case 'shift_tasks':
-      return await shiftTasksByFilters(sessionId, filters, parameters);
-      
+      return await shiftCalendarEvents(parameters, sessionId, originalCommand, filters);
+    
     case 'update_reminders':
-      return await updateRemindersByFilters(sessionId, filters, parameters);
-      
+      return await updateCalendarReminders(parameters || filters, sessionId, originalCommand);
+    
     case 'list_events':
-      return await listEventsByFilters(sessionId, filters, parameters);
+      return await listCalendarEvents(parameters || filters, sessionId, originalCommand);
       
     default:
       return {
@@ -194,7 +235,7 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
   console.log('=== CREATING AI REMINDER ===');
   console.log('Parameters:', parameters);
   
-  const { title, time, date, count } = parameters;
+  const { title, time, date, dateRange, count } = parameters;
   
   if (!title) {
     return {
@@ -212,11 +253,46 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
   const reminderCount = count || 1;
   const results = [];
   
+  // Generate dates based on dateRange or single date
+  const reminderDates = [];
+  
+  if (dateRange) {
+    // Parse date range like "14dec to 20 dec"
+    const dateRangeMatch = dateRange.match(/(\d{1,2}\w+)\s*to\s*(\d{1,2}\w+)/i);
+    if (dateRangeMatch) {
+      const startDate = parseDateText(dateRangeMatch[1]);
+      const endDate = parseDateText(dateRangeMatch[2]);
+      
+      if (startDate && endDate) {
+        const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+        const daysToCreate = Math.min(reminderCount, daysDiff + 1);
+        
+        for (let i = 0; i < daysToCreate; i++) {
+          const currentDate = new Date(startDate);
+          currentDate.setDate(startDate.getDate() + i);
+          reminderDates.push(currentDate.toISOString().split('T')[0]);
+        }
+      }
+    }
+  } else if (date) {
+    // Handle single date
+    const singleDate = date === 'today' ? new Date().toISOString().split('T')[0] : 
+                      date === 'tomorrow' ? new Date(Date.now() + 86400000).toISOString().split('T')[0] :
+                      parseDateText(date)?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0];
+    reminderDates.push(singleDate);
+  } else {
+    // Default to today
+    reminderDates.push(new Date().toISOString().split('T')[0]);
+  }
+  
+  // If we still don't have enough dates, repeat the last date
+  while (reminderDates.length < reminderCount) {
+    reminderDates.push(reminderDates[reminderDates.length - 1]);
+  }
+  
   for (let i = 0; i < reminderCount; i++) {
     const reminderId = uuidv4();
-    const reminderDate = date === 'today' ? new Date().toISOString().split('T')[0] : 
-                        date === 'tomorrow' ? new Date(Date.now() + 86400000).toISOString().split('T')[0] :
-                        date || new Date().toISOString().split('T')[0];
+    const reminderDate = reminderDates[i] || new Date().toISOString().split('T')[0];
     
     // Generate random time if creating multiple and no specific time given
     const reminderTime = time || (reminderCount > 1 ? generateRandomTime() : '09:00');
@@ -260,6 +336,36 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
     reminders: results,
     message: `Created ${results.length} reminder${results.length !== 1 ? 's' : ''}: "${title}" for ${results[0].date}${results.length > 1 ? ' at various times' : ' at ' + results[0].time}`
   };
+}
+
+function parseDateText(dateText) {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  
+  // Handle patterns like "14dec", "20 dec", "14dec2025", etc.
+  const dateMatch = dateText.match(/(\d{1,2})\s*([a-z]{3,4})/i);
+  if (dateMatch) {
+    const day = parseInt(dateMatch[1]);
+    const monthText = dateMatch[2].toLowerCase();
+    
+    // Map month names to numbers
+    const monthMap = {
+      'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
+      'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
+    };
+    
+    const month = monthMap[monthText.substring(0, 3)];
+    if (month !== undefined) {
+      const date = new Date(currentYear, month, day);
+      // If the date is in the past, assume it's for next year
+      if (date < today) {
+        date.setFullYear(currentYear + 1);
+      }
+      return date;
+    }
+  }
+  
+  return null;
 }
 
 function generateRandomTime() {
@@ -602,76 +708,424 @@ router.delete('/calendar-events', async (req, res) => {
   }
 });
 
-async function getGoogleCalendarEvents(sessionId, filters = {}) {
-  const { date, startDate, endDate } = filters;
-  
-  try {
-    const auth = await getGoogleAuth(sessionId);
-    if (!auth) {
-      throw new Error('Google Calendar not connected');
+// Helper functions for filtering and processing
+function filterEventsByCriteria(events, filters) {
+  return events.filter(event => {
+    // Filter by date range
+    if (filters.dateRange) {
+      const eventDate = new Date(event.start.dateTime || event.start.date);
+      if (filters.dateRange === 'this week') {
+        const now = new Date();
+        const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
+        const weekEnd = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+        if (eventDate < weekStart || eventDate > weekEnd) return false;
+      }
+      // Add more date range filters as needed
     }
-
-    const calendar = google.calendar({ version: 'v3', auth });
-
-    let timeMin = null;
-    let timeMax = null;
-
-    if (date) {
-      timeMin = new Date(date).toISOString();
-      timeMax = new Date(new Date(date).getTime() + 24 * 60 * 60 * 1000).toISOString();
-    } else if (startDate && endDate) {
-      timeMin = new Date(startDate).toISOString();
-      timeMax = new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000).toISOString();
-    } else if (startDate) {
-      timeMin = new Date(startDate).toISOString();
-      timeMax = new Date(new Date(startDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+    
+    // Filter by time range
+    if (filters.timeRange) {
+      const eventTime = new Date(event.start.dateTime);
+      const startTime = parseTime(filters.timeRange.start);
+      const endTime = parseTime(filters.timeRange.end);
+      if (eventTime.getHours() < startTime || eventTime.getHours() > endTime) return false;
     }
-
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin,
-      timeMax,
-      singleEvents: true,
-      orderBy: 'startTime',
-      q: 'Task Reminder' // Filter for task reminders
-    });
-
-    return response.data.items || [];
-  } catch (error) {
-    console.error('Failed to get calendar events:', error);
-    throw error;
-  }
+    
+    // Filter by task type
+    if (filters.taskType) {
+      const summary = (event.summary || '').toLowerCase();
+      const description = (event.description || '').toLowerCase();
+      if (!summary.includes(filters.taskType) && !description.includes(filters.taskType)) return false;
+    }
+    
+    // Filter by keywords
+    if (filters.keywords) {
+      const summary = (event.summary || '').toLowerCase();
+      const description = (event.description || '').toLowerCase();
+      const hasKeyword = filters.keywords.some(keyword => 
+        summary.includes(keyword.toLowerCase()) || description.includes(keyword.toLowerCase())
+      );
+      if (!hasKeyword) return false;
+    }
+    
+    return true;
+  });
 }
 
-async function bulkDeleteCalendarEvents(sessionId, eventIds) {
-  const results = { deleted: 0, failed: 0 };
-  
+function parseTime(timeStr) {
+  if (timeStr.includes('am') || timeStr.includes('pm')) {
+    const isPM = timeStr.includes('pm') && !timeStr.includes('12');
+    const hours = parseInt(timeStr.replace(/[ap]m/, '').trim()) + (isPM ? 12 : 0);
+    return [hours, 0];
+  } else if (timeStr.includes(':')) {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return [hours, minutes];
+  }
+  return [9, 0]; // Default to 9 AM
+}
+
+function formatDate(dateTime) {
+  const date = new Date(dateTime.dateTime || dateTime.date);
+  return date.toLocaleDateString();
+}
+
+function formatTime(dateTime) {
+  const date = new Date(dateTime.dateTime || dateTime.date);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+async function deleteCalendarReminders(parameters, sessionId, originalCommand) {
   try {
-    const auth = await getGoogleAuth(sessionId);
-    if (!auth) {
-      throw new Error('Google Calendar not connected');
-    }
-
-    const calendar = google.calendar({ version: 'v3', auth });
-
-    for (const eventId of eventIds) {
-      try {
-        await calendar.events.delete({
-          calendarId: 'primary',
-          eventId: eventId
-        });
-        results.deleted++;
-      } catch (error) {
-        console.error(`Failed to delete event ${eventId}:`, error);
-        results.failed++;
+    console.log('=== DELETING CALENDAR REMINDERS ===');
+    console.log('Parameters:', parameters);
+    
+    // Convert date parameter to filters
+    const filters = {};
+    if (parameters.date) {
+      const dayName = parameters.date.toLowerCase();
+      const today = new Date();
+      const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      
+      // Map day names to numbers
+      const dayMap = {
+        'sunday': 0,
+        'monday': 1,
+        'tuesday': 2,
+        'wednesday': 3,
+        'thursday': 4,
+        'friday': 5,
+        'saturday': 6
+      };
+      
+      if (dayMap[dayName] !== undefined) {
+        // Calculate days until the target day
+        const targetDay = dayMap[dayName];
+        let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+        if (daysUntilTarget === 0) daysUntilTarget = 7; // If today is that day, use next week
+        
+        const targetDate = new Date(today.getTime() + daysUntilTarget * 24 * 60 * 60 * 1000);
+        filters.startDate = targetDate.toISOString().split('T')[0];
+        filters.endDate = targetDate.toISOString().split('T')[0];
+      } else {
+        // Handle other date formats
+        filters.date = parameters.date;
       }
     }
-
-    return results;
+    
+    // Get all events from Google Calendar
+    const events = await getGoogleCalendarEvents(sessionId, filters);
+    console.log('Found events:', events.length);
+    
+    // Filter events based on criteria
+    const eventsToDelete = filterEventsByCriteria(events, filters);
+    console.log('Events to delete:', eventsToDelete.length);
+    
+    if (eventsToDelete.length === 0) {
+      return {
+        type: 'no_events_found',
+        message: `No reminders found matching your criteria: ${originalCommand}`,
+        criteria: filters
+      };
+    }
+    
+    // Delete the events
+    const results = await bulkDeleteCalendarEvents(sessionId, eventsToDelete.map(e => e.id));
+    
+    return {
+      type: 'reminders_deleted',
+      deleted: results.deleted.length,
+      failed: results.failed.length,
+      message: `Deleted ${results.deleted.length} reminders matching: ${originalCommand}`,
+      deletedEvents: results.deleted,
+      failedEvents: results.failed
+    };
+    
   } catch (error) {
-    console.error('Bulk delete failed:', error);
-    throw error;
+    console.error('Failed to delete reminders:', error);
+    return {
+      type: 'error',
+      message: `Failed to delete reminders: ${error.message}`
+    };
   }
-}
+};
+
+async function shiftCalendarEvents(parameters, sessionId, originalCommand) {
+  try {
+    console.log('=== SHIFTING CALENDAR EVENTS ===');
+    console.log('Parameters:', parameters);
+    
+    // Get the filters from executeAICommand - it passes parameters OR filters
+    const sourceFilters = arguments[2] === originalCommand ? {} : arguments[2];
+    console.log('Source filters:', sourceFilters);
+    
+    // Convert source date filter to actual date range
+    const filters = {};
+    if (sourceFilters.date) {
+      const dayName = sourceFilters.date.toLowerCase();
+      const today = new Date();
+      const currentDay = today.getDay();
+      
+      const dayMap = {
+        'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+        'thursday': 4, 'friday': 5, 'saturday': 6
+      };
+      
+      if (dayMap[dayName] !== undefined) {
+        const targetDay = dayMap[dayName];
+        let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+        if (daysUntilTarget === 0) daysUntilTarget = 7;
+        
+        const targetDate = new Date(today.getTime() + daysUntilTarget * 24 * 60 * 60 * 1000);
+        filters.startDate = targetDate.toISOString().split('T')[0];
+        filters.endDate = targetDate.toISOString().split('T')[0];
+        console.log('Looking for events on date:', filters.startDate, 'for day:', dayName);
+      }
+    }
+    
+    // Add task type filter
+    if (sourceFilters.taskType) {
+      filters.taskType = sourceFilters.taskType;
+    }
+    
+    // First, get ALL events to debug
+    console.log('=== DEBUG: Fetching all events ===');
+    const allEvents = await getGoogleCalendarEvents(sessionId, {});
+    console.log('Total events found:', allEvents.length);
+    allEvents.forEach((event, index) => {
+      console.log(`Event ${index + 1}:`, {
+        id: event.id,
+        summary: event.summary,
+        start: event.start,
+        end: event.end
+      });
+    });
+    
+    // Then get filtered events
+    const events = await getGoogleCalendarEvents(sessionId, filters);
+    console.log('Filtered events count:', events.length);
+    
+    const eventsToShift = filterEventsByCriteria(events, filters);
+    console.log('Events to shift after filtering:', eventsToShift.length);
+    
+    if (eventsToShift.length === 0) {
+      return {
+        type: 'no_events_found',
+        message: `No events found to shift: ${originalCommand}`,
+        debug: {
+          totalEvents: allEvents.length,
+          filteredEvents: events.length,
+          filters: filters,
+          sourceFilters: sourceFilters,
+          allEventSummaries: allEvents.map(e => e.summary)
+        }
+      };
+    }
+    
+    // Calculate new times based on target date
+    const updates = eventsToShift.map(event => {
+      let newStart, newEnd;
+      
+      // Use target date if specified, otherwise shift by amount
+      if (parameters.date) {
+        // Parse target date like "13 December"
+        const targetDate = parseDateText(parameters.date);
+        if (targetDate) {
+          // Extract time from original event
+          const originalStart = new Date(event.start.dateTime || event.start.date);
+          const originalEnd = new Date(event.end.dateTime || event.end.date);
+          
+          // Set target date with original time
+          newStart = new Date(targetDate);
+          newStart.setHours(originalStart.getHours(), originalStart.getMinutes(), 0, 0);
+          
+          newEnd = new Date(targetDate);
+          newEnd.setHours(originalEnd.getHours(), originalEnd.getMinutes(), 0, 0);
+        } else {
+          // Fallback to shifting
+          newStart = calculateShiftedTime(event.start, parameters);
+          newEnd = calculateShiftedTime(event.end, parameters);
+        }
+      } else {
+        // Fallback to shifting
+        newStart = calculateShiftedTime(event.start, parameters);
+        newEnd = calculateShiftedTime(event.end, parameters);
+      }
+      
+      return {
+        eventId: event.id,
+        eventData: {
+          ...event,
+          start: { dateTime: typeof newStart === 'string' ? newStart : newStart.toISOString() },
+          end: { dateTime: typeof newEnd === 'string' ? newEnd : newEnd.toISOString() }
+        }
+      };
+    });
+    
+    const results = await bulkUpdateCalendarEvents(sessionId, updates);
+    
+    return {
+      type: 'events_shifted',
+      updated: results.updated.length,
+      failed: results.failed.length,
+      message: `Shifted ${results.updated.length} events: ${originalCommand}`,
+      updatedEvents: results.updated,
+      failedEvents: results.failed
+    };
+    
+  } catch (error) {
+    console.error('Failed to shift events:', error);
+    return {
+      type: 'error',
+      message: `Failed to shift events: ${error.message}`
+    };
+  }
+};
+
+function calculateShiftedTime(dateTime, parameters) {
+  // Handle Google Calendar date objects
+  let date;
+  if (typeof dateTime === 'object' && dateTime.dateTime) {
+    date = new Date(dateTime.dateTime);
+  } else if (typeof dateTime === 'object' && dateTime.date) {
+    date = new Date(dateTime.date);
+  } else {
+    date = new Date(dateTime);
+  }
+  
+  if (isNaN(date.getTime())) {
+    throw new Error('Invalid date value');
+  }
+  
+  if (parameters.shiftAmount && parameters.shiftUnit) {
+    const amount = parseInt(parameters.shiftAmount);
+    const unit = parameters.shiftUnit.toLowerCase();
+    
+    switch (unit) {
+      case 'days':
+        date.setDate(date.getDate() + amount);
+        break;
+      case 'hours':
+        date.setHours(date.getHours() + amount);
+        break;
+      case 'weeks':
+        date.setDate(date.getDate() + (amount * 7));
+        break;
+    }
+  }
+  
+  return date.toISOString();
+};
+
+async function updateCalendarReminders(parameters, sessionId, originalCommand) {
+  try {
+    console.log('=== UPDATING CALENDAR REMINDERS ===');
+    console.log('Parameters:', parameters);
+    
+    const events = await getGoogleCalendarEvents(sessionId, parameters);
+    const eventsToUpdate = filterEventsByCriteria(events, parameters);
+    
+    if (eventsToUpdate.length === 0) {
+      return {
+        type: 'no_events_found',
+        message: `No events found to update: ${originalCommand}`
+      };
+    }
+    
+    // Apply updates based on criteria
+    const updates = eventsToUpdate.map(event => {
+      const updatedEvent = applyUpdateCriteria(event, parameters);
+      return {
+        eventId: event.id,
+        eventData: updatedEvent
+      };
+    });
+    
+    const results = await bulkUpdateCalendarEvents(sessionId, updates);
+    
+    return {
+      type: 'reminders_updated',
+      updated: results.updated.length,
+      failed: results.failed.length,
+      message: `Updated ${results.updated.length} reminders: ${originalCommand}`,
+      updatedEvents: results.updated,
+      failedEvents: results.failed
+    };
+    
+  } catch (error) {
+    console.error('Failed to update reminders:', error);
+    return {
+      type: 'error',
+      message: `Failed to update reminders: ${error.message}`
+    };
+  }
+};
+
+async function listCalendarEvents(parameters, sessionId, originalCommand) {
+  try {
+    console.log('=== LISTING CALENDAR EVENTS ===');
+    console.log('Parameters:', parameters);
+    
+    const events = await getGoogleCalendarEvents(sessionId, parameters);
+    const filteredEvents = filterEventsByCriteria(events, parameters);
+    
+    if (filteredEvents.length === 0) {
+      return {
+        type: 'no_events_found',
+        message: `No events found: ${originalCommand}`,
+        criteria: parameters
+      };
+    }
+    
+    // Format events for display
+    const formattedEvents = filteredEvents.map(event => ({
+      id: event.id,
+      title: event.summary,
+      description: event.description,
+      date: formatDate(event.start),
+      time: formatTime(event.start),
+      end: formatTime(event.end)
+    }));
+    
+    return {
+      type: 'events_listed',
+      count: formattedEvents.length,
+      message: `Found ${formattedEvents.length} events: ${originalCommand}`,
+      events: formattedEvents
+    };
+    
+  } catch (error) {
+    console.error('Failed to list events:', error);
+    return {
+      type: 'error',
+      message: `Failed to list events: ${error.message}`
+    };
+  }
+};
+
+function applyUpdateCriteria(event, filters) {
+  const updatedEvent = { ...event };
+  
+  // Update time
+  if (filters.newTime) {
+    const newDateTime = new Date(event.start.dateTime);
+    const [hours, minutes] = parseTime(filters.newTime);
+    newDateTime.setHours(hours, minutes);
+    updatedEvent.start = { ...updatedEvent.start, dateTime: newDateTime.toISOString() };
+    
+    // Update end time to maintain duration
+    const duration = new Date(event.end.dateTime) - new Date(event.start.dateTime);
+    updatedEvent.end = { 
+      ...updatedEvent.end, 
+      dateTime: new Date(newDateTime.getTime() + duration).toISOString() 
+    };
+  }
+  
+  // Update title
+  if (filters.newTitle) {
+    updatedEvent.summary = filters.newTitle;
+  }
+  
+  return updatedEvent;
+};
 
 export default router;
