@@ -1,6 +1,7 @@
 import { query } from './db.js';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
+import { createAccountabilityTask, parseAccountabilityPrompt } from './accountability.js';
 
 const UpdateTaskParams = z.object({ id: z.string().uuid().optional(), status: z.string().optional(), title: z.string().optional(), description: z.string().optional(), category: z.string().optional(), query: z.string().optional() });
 const BulkTaskParams = z.object({ pattern: z.string(), status: z.string().optional() });
@@ -235,6 +236,75 @@ async function executeAction(action, { io, pendingRequests, sessionId }) {
       }
       
       return { ok: true, updated: updatedTasks, count: updatedTasks.length, pattern, status: normalizedStatus };
+    }
+    case 'create_accountability': {
+      const { taskTitle, deadline, consequence, consequenceType, recipient } = action.params || {};
+      console.log('Creating accountability for task:', taskTitle, 'deadline:', deadline);
+      
+      if (!taskTitle || !deadline || !consequence) {
+        throw new Error('Task title, deadline, and consequence are required for accountability');
+      }
+      
+      // Find the task by title, or create it if it doesn't exist
+      let taskId;
+      const { rows: taskRows } = await query(
+        `SELECT id FROM tasks WHERE title ILIKE $1 ORDER BY created_at DESC LIMIT 1`,
+        [`%${taskTitle}%`]
+      );
+      
+      if (taskRows.length === 0) {
+        console.log(`Task "${taskTitle}" not found, creating it...`);
+        // Create the task first
+        taskId = uuidv4();
+        const { rows: newTaskRows } = await query(
+          `INSERT INTO tasks (id, title, description, category, status) VALUES ($1, $2, $3, $4, 'todo') RETURNING *`,
+          [taskId, taskTitle, '', 'general']
+        );
+        
+        const newTask = newTaskRows[0];
+        console.log('Created new task:', newTask);
+        
+        // Emit task creation event
+        io.emit('task:created', newTask);
+        
+        // Update context with new task
+        if (sessionId && io.updateContext) {
+          io.updateContext(sessionId, newTask, 'created');
+        }
+      } else {
+        taskId = taskRows[0].id;
+        console.log(`Found existing task "${taskTitle}" with ID:`, taskId);
+      }
+      
+      const userId = sessionId || 'anonymous'; // Use session ID as user ID for now
+      
+      // Create accountability task
+      const accountabilityTask = await createAccountabilityTask(
+        taskId, 
+        userId, 
+        deadline, 
+        consequence, 
+        consequenceType || 'sms', 
+        recipient
+      );
+      
+      console.log('Accountability task created:', accountabilityTask);
+      
+      // Emit accountability event
+      io.emit('accountability:created', {
+        accountabilityTask,
+        taskTitle,
+        deadline,
+        consequence,
+        taskCreated: taskRows.length === 0
+      });
+      
+      return { 
+        ok: true, 
+        accountabilityTask, 
+        taskCreated: taskRows.length === 0,
+        message: `Accountability set: If "${taskTitle}" isn't done by ${new Date(deadline).toLocaleString()}, ${consequence}${taskRows.length === 0 ? ' (Task was created automatically)' : ''}`
+      };
     }
     default:
       throw new Error(`Unknown action type: ${action.type}`);

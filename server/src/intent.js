@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { parseIntentWithAI } from './ai.js';
 
 export const AgentActionType = z.enum([
-  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks', 'bulk_delete_tasks', 'bulk_update_tasks'
+  'create_task', 'update_task_status', 'delete_task', 'delete_all_tasks', 'bulk_delete_tasks', 'bulk_update_tasks', 'create_accountability'
 ]);
 
 export const AgentAction = z.object({

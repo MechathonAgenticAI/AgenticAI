@@ -4,10 +4,14 @@ import http from 'http';
 import cors from 'cors';
 import { Server as IOServer } from 'socket.io';
 import tasksRouterFactory from './routes/tasks.js';
+import scheduleRouter from './routes/schedule.js';
+import smartAssistantRouter from './routes/smart-assistant.js';
 import { parseIntent } from './intent.js';
 import { executePlan } from './actions.js';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from './db.js';
+import { scheduleAccountabilityCheck } from './accountability.js';
+import { getGoogleAuthURL, handleGoogleCallback, initializeIntegrationsDB } from './google-integration.js';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -50,6 +54,8 @@ io.updateContext = function(sessionId, task, action) {
 
 // Routers
 app.use('/api/tasks', tasksRouterFactory(io));
+app.use('/api/schedule', scheduleRouter);
+app.use('/api/smart-assistant', smartAssistantRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -245,7 +251,7 @@ app.post('/api/agent/command', async (req, res, next) => {
       const mostRecentTask = context.recentTasks[0];
       console.log('Auto-resolving "delete this task" to most recent task:', mostRecentTask);
       
-      // Create a plan with the specific task ID
+      // Create a plan with the specific task ID that requires confirmation
       const plan = {
         actions: [{
           type: 'delete_task',
@@ -256,9 +262,26 @@ app.post('/api/agent/command', async (req, res, next) => {
       };
       
       io.emit('agent:intent', plan);
-      const result = await executePlan(plan, { io, pendingRequests, pendingConfirmations, sessionId });
-      io.emit('agent:status', { sessionId, state: 'done' });
-      return res.json({ plan, result });
+      
+      // Set conversation state for confirmation
+      conversationStates.set(sessionId, {
+        type: 'awaiting_confirmation',
+        plan: plan
+      });
+      
+      io.emit('agent:message', { 
+        sessionId, 
+        message: plan.confirmations[0] + " (Type 'yes' to confirm or 'no' to cancel)",
+        type: 'asking_confirmation'
+      });
+      
+      io.emit('agent:status', { sessionId, state: 'awaiting_input' });
+      
+      return res.json({ 
+        awaiting_input: true,
+        type: 'confirmation',
+        message: plan.confirmations[0]
+      });
     }
     
     // AI processing started
@@ -473,12 +496,99 @@ app.post('/api/agent/continue', async (req, res, next) => {
   }
 });
 
+// Google Integration Routes
+app.get('/api/google/auth', (req, res) => {
+  const { sessionId } = req.query;
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId required' });
+  }
+  
+  const authUrl = getGoogleAuthURL(sessionId);
+  res.json({ authUrl });
+});
+
+app.get('/api/google/callback', async (req, res, next) => {
+  try {
+    const { code, state: sessionId } = req.query;
+    if (!code || !sessionId) {
+      return res.status(400).send(`
+        <html>
+          <body>
+            <h1>Authentication Failed</h1>
+            <p>Missing required parameters. Please try again.</p>
+            <script>
+              setTimeout(() => {
+                window.close();
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    }
+    
+    const result = await handleGoogleCallback(code, sessionId);
+    
+    if (result.success) {
+      res.send(`
+        <html>
+          <body>
+            <h1>Authentication Successful!</h1>
+            <p>Google Calendar and Tasks connected successfully.</p>
+            <p>You can close this window and return to the app.</p>
+            <script>
+              setTimeout(() => {
+                window.close();
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    } else {
+      res.status(400).send(`
+        <html>
+          <body>
+            <h1>Authentication Failed</h1>
+            <p>Error: ${result.error}</p>
+            <p>Please try again.</p>
+            <script>
+              setTimeout(() => {
+                window.close();
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    }
+  } catch (error) {
+    console.error('Google callback error:', error);
+    res.status(500).send(`
+      <html>
+        <body>
+          <h1>Authentication Failed</h1>
+          <p>Server error occurred. Please try again.</p>
+          <script>
+            setTimeout(() => {
+              window.close();
+            }, 3000);
+          </script>
+        </body>
+      </html>
+    `);
+  }
+});
+
 // Error handler
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'internal_error', details: String(err?.message || err) });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Server listening on http://localhost:${PORT}`);
+  
+  // Initialize integrations database
+  await initializeIntegrationsDB();
+  
+  // Start the accountability checker
+  scheduleAccountabilityCheck();
 });

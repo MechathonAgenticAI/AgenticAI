@@ -15,6 +15,7 @@ Available action types:
 - delete_all_tasks: Delete all tasks (requires confirmation)
 - bulk_delete_tasks: Delete multiple tasks matching a pattern (requires confirmation)
 - bulk_update_tasks: Update multiple tasks matching a pattern (requires confirmation)
+- create_accountability: Create social pressure consequence for task deadline
 
 Rules:
 1. Extract parameters carefully from the text
@@ -25,6 +26,7 @@ Rules:
 6. For create_task actions, determine appropriate category based on task content
 7. For bulk operations, extract the pattern/keyword and action type from the text
 8. For ambiguous references like "this task" or "that task", check if context provides a recent task ID
+9. For accountability commands, parse the full "if...then..." structure carefully
 
 Context-aware deletion:
 - If user says "delete this task" and context shows a recently mentioned task, use that task ID
@@ -43,7 +45,12 @@ Response format:
         "category": "AI-determined category",
         "status": "done|todo",
         "pattern": "keyword pattern for bulk operations",
-        "id": "specific_id_if_mentioned"
+        "id": "specific_id_if_mentioned",
+        "taskTitle": "title for accountability",
+        "deadline": "ISO datetime string",
+        "consequence": "full consequence text",
+        "consequenceType": "sms|whatsapp|email",
+        "recipient": "person to notify"
       }
     }
   ],
@@ -78,6 +85,15 @@ Output: {"actions": [{"type": "delete_task", "params": {"id": "most_recent_task_
 
 Input: "Delete task buy groceries"
 Output: {"actions": [{"type": "delete_task", "params": {"title": "buy groceries"}}], "confirmations": ["Delete task 'buy groceries'?"], "meta": {"text": "Delete task buy groceries"}}
+
+Input: "If I don't finish the 'Tax Filing' task by 6 PM, text my wife that I'm lazy."
+Output: {"actions": [{"type": "create_accountability", "params": {"taskTitle": "Tax Filing", "deadline": "2024-12-07T18:00:00Z", "consequence": "text my wife that I'm lazy", "consequenceType": "sms", "recipient": "wife"}}], "confirmations": ["Set accountability: If 'Tax Filing' isn't done by 6 PM, text your wife?"], "meta": {"text": "If I don't finish the 'Tax Filing' task by 6 PM, text my wife that I'm lazy."}}
+
+Input: "When I don't complete 'Gym Workout' by 7 AM, email my boss that I overslept"
+Output: {"actions": [{"type": "create_accountability", "params": {"taskTitle": "Gym Workout", "deadline": "2024-12-07T07:00:00Z", "consequence": "email my boss that I overslept", "consequenceType": "email", "recipient": "boss"}}], "confirmations": ["Set accountability: If 'Gym Workout' isn't done by 7 AM, email your boss?"], "meta": {"text": "When I don't complete 'Gym Workout' by 7 AM, email my boss that I overslept"}}
+
+Input: "If the 'Report' task isn't done by 5 PM, whatsapp my team that I'm behind schedule"
+Output: {"actions": [{"type": "create_accountability", "params": {"taskTitle": "Report", "deadline": "2024-12-07T17:00:00Z", "consequence": "whatsapp my team that I'm behind schedule", "consequenceType": "whatsapp", "recipient": "team"}}], "confirmations": ["Set accountability: If 'Report' isn't done by 5 PM, whatsapp your team?"], "meta": {"text": "If the 'Report' task isn't done by 5 PM, whatsapp my team that I'm behind schedule"}}
 
 Input: "Delete all tasks related to vehicle"
 Output: {"actions": [{"type": "bulk_delete_tasks", "params": {"pattern": "vehicle"}}], "confirmations": ["Delete all tasks containing 'vehicle'?"], "meta": {"text": "Delete all tasks related to vehicle"}}

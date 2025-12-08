@@ -1,0 +1,541 @@
+import React, { useState, useRef } from 'react';
+import { Upload, Image as ImageIcon, Clock, Calendar, Settings, AlertCircle, FileText, Download, Share2, Trash2, Eye, EyeOff, ChevronRight, Sparkles, Brain, Zap, Link as LinkIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+
+export default function SchedulePage() {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [reminderMinutes, setReminderMinutes] = useState('10');
+  const [startDate, setStartDate] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState('');
+  const [examples, setExamples] = useState([]);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [savedSchedules, setSavedSchedules] = useState([]);
+  const [activeTab, setActiveTab] = useState('upload');
+  
+  const fileInputRef = useRef(null);
+
+  // Load examples on mount
+  React.useEffect(() => {
+    fetch('http://localhost:4000/api/schedule/examples')
+      .then(res => res.json())
+      .then(data => setExamples(data.examples || []))
+      .catch(err => console.error('Failed to load examples:', err));
+  }, []);
+
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedFile(file);
+      setError('');
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => setPreview(e.target.result);
+      reader.readAsDataURL(file);
+    } else {
+      setError('Please select an image file');
+    }
+  };
+
+  const handleExampleSelect = (example) => {
+    setCustomPrompt(example.prompt);
+    setReminderMinutes(example.reminderMinutes.toString());
+  };
+
+  const handlePreview = async () => {
+    if (!selectedFile) {
+      setError('Please select an image first');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('scheduleImage', selectedFile);
+      formData.append('customPrompt', customPrompt);
+      formData.append('reminderMinutes', reminderMinutes);
+
+      const response = await fetch('http://localhost:4000/api/schedule/preview', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Session-ID': localStorage.getItem('agent_session_id') || 'anonymous'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setPreviewData(data.scheduleData);
+        setShowPreview(true);
+      } else {
+        setError(data.error || 'Failed to preview schedule');
+      }
+    } catch (err) {
+      setError('Network error: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleUpload = async () => {
+    console.log('=== UPLOAD DEBUG ===');
+    console.log('selectedFile:', selectedFile);
+    console.log('previewData:', previewData);
+    
+    if (!selectedFile && !previewData) {
+      setError('Please select an image or use previewed data');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError('');
+
+    try {
+      let response;
+      
+      // If we have previewed data, send it directly (skip image upload)
+      if (previewData) {
+        console.log('Uploading with previewed data, skipping AI analysis');
+        console.log('Preview data length:', JSON.stringify(previewData).length);
+        response = await fetch('http://localhost:4000/api/schedule/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-ID': localStorage.getItem('agent_session_id') || 'anonymous'
+          },
+          body: JSON.stringify({
+            scheduleData: JSON.stringify(previewData),
+            startDate,
+            customPrompt,
+            reminderMinutes
+          })
+        });
+      } else {
+        console.log('Uploading with image (no preview data)');
+        // Original flow: upload image
+        const formData = new FormData();
+        formData.append('scheduleImage', selectedFile);
+        formData.append('customPrompt', customPrompt);
+        formData.append('reminderMinutes', reminderMinutes);
+        formData.append('startDate', startDate);
+
+        response = await fetch('http://localhost:4000/api/schedule/upload', {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'X-Session-ID': localStorage.getItem('agent_session_id') || 'anonymous'
+          }
+        });
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setResults(data.results);
+        // Clear form
+        setSelectedFile(null);
+        setPreview(null);
+        setCustomPrompt('');
+        setReminderMinutes('10');
+        setStartDate('');
+        setPreviewData(null);
+      } else {
+        setError(data.error || 'Failed to process schedule');
+      }
+    } catch (err) {
+      setError('Network error: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-3xl"></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-blue-900/20 via-transparent to-purple-900/20"></div>
+      
+      {/* Header */}
+      <header className="relative sticky top-0 z-10 backdrop-blur-xl bg-white/5 border-b border-white/10 shadow-xl">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link to="/" className="text-white/60 hover:text-white transition-colors">
+                ← Back to Dashboard
+              </Link>
+              <div className="h-6 w-px bg-white/20"></div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-lg">
+                  <Brain className="w-5 h-5 text-purple-400" />
+                </div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                  Visual Schedule Parser
+                </h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400">
+                AI-Powered
+              </span>
+              <span className="px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-full text-xs text-blue-400">
+                Vision API
+              </span>
+              <span className="px-3 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded-full text-xs text-yellow-400">
+                Google: Manual Setup
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="relative max-w-7xl mx-auto px-6 py-8">
+        {/* Tabs */}
+        <div className="flex gap-1 mb-8 bg-white/5 p-1 rounded-xl backdrop-blur-xl border border-white/10">
+          <button
+            onClick={() => setActiveTab('upload')}
+            className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
+              activeTab === 'upload' 
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Upload className="w-4 h-4 inline mr-2" />
+            Upload Schedule
+          </button>
+          <button
+            onClick={() => setActiveTab('examples')}
+            className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
+              activeTab === 'examples' 
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 inline mr-2" />
+            Examples
+          </button>
+          <button
+            onClick={() => setActiveTab('saved')}
+            className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
+              activeTab === 'saved' 
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <FileText className="w-4 h-4 inline mr-2" />
+            Saved Schedules
+          </button>
+        </div>
+
+        {/* Upload Tab */}
+        {activeTab === 'upload' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column - Upload & Settings */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Upload Area */}
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-lg">
+                    <ImageIcon className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <h2 className="text-xl font-semibold text-white">Upload Schedule Image</h2>
+                </div>
+
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-white/20 rounded-xl p-12 text-center cursor-pointer hover:border-purple-400/50 transition-colors bg-white/5"
+                >
+                  {preview ? (
+                    <div className="space-y-4">
+                      <img src={preview} alt="Schedule preview" className="max-w-full max-h-96 mx-auto rounded-lg shadow-xl" />
+                      <p className="text-sm text-white/60">Click to change image</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <Upload className="w-16 h-16 text-purple-400 mx-auto" />
+                      <div>
+                        <p className="text-white font-medium text-lg">Drop your schedule image here</p>
+                        <p className="text-sm text-white/60">PNG, JPG up to 10MB</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Settings */}
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <Settings className="w-5 h-5" />
+                    Settings
+                  </h3>
+                  <button
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
+                  >
+                    {showAdvanced ? 'Hide' : 'Show'} Advanced
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Reminder Time
+                    </label>
+                    <select
+                      value={reminderMinutes}
+                      onChange={(e) => setReminderMinutes(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent"
+                    >
+                      <option value="5">5 minutes before</option>
+                      <option value="10">10 minutes before</option>
+                      <option value="15">15 minutes before</option>
+                      <option value="30">30 minutes before</option>
+                      <option value="60">1 hour before</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Week Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                {showAdvanced && (
+                  <div className="mt-6 p-4 bg-white/5 rounded-lg border border-white/10">
+                    <h4 className="text-sm font-medium text-white/80 mb-3">Advanced Options</h4>
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-3 text-sm text-white/60">
+                        <input type="checkbox" className="rounded" />
+                        <span>Auto-detect schedule type</span>
+                      </label>
+                      <label className="flex items-center gap-3 text-sm text-white/60">
+                        <input type="checkbox" className="rounded" />
+                        <span>Include breaks and free periods</span>
+                      </label>
+                      <label className="flex items-center gap-3 text-sm text-white/60">
+                        <input type="checkbox" className="rounded" defaultChecked />
+                        <span>Create Google Calendar events</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Custom Prompt */}
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <Zap className="w-5 h-5" />
+                  Custom Instructions
+                </h3>
+                <textarea
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  placeholder="E.g., 'This is my college schedule with labs and lectures. Extract room numbers and set 15-minute reminders.'"
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent resize-none"
+                  rows={4}
+                />
+              </div>
+            </div>
+
+            {/* Right Column - Examples & Actions */}
+            <div className="space-y-6">
+              {/* Quick Examples */}
+              {examples.length > 0 && (
+                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Sparkles className="w-5 h-5" />
+                    Quick Examples
+                  </h3>
+                  <div className="space-y-3">
+                    {examples.map((example, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleExampleSelect(example)}
+                        className="w-full text-left p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors border border-white/10 group"
+                      >
+                        <p className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors">
+                          {example.title}
+                        </p>
+                        <p className="text-xs text-white/60 mt-1">{example.description}</p>
+                        <p className="text-xs text-purple-400 mt-2">
+                          {example.reminderMinutes} min reminders
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                <h3 className="text-lg font-semibold text-white mb-4">Actions</h3>
+                
+                {error && (
+                  <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
+                    <AlertCircle className="w-4 h-4 text-red-400" />
+                    <p className="text-sm text-red-400">{error}</p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <button
+                    onClick={handlePreview}
+                    disabled={!selectedFile || isProcessing}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    {isProcessing ? 'Analyzing...' : 'Preview Schedule'}
+                  </button>
+                  <button
+                    onClick={handleUpload}
+                    disabled={!selectedFile || isProcessing}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Zap className="w-4 h-4" />
+                    {isProcessing ? 'Processing...' : 'Create All Tasks'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Results */}
+              {results && (
+                <div className="bg-green-500/10 backdrop-blur-xl border border-green-500/20 rounded-2xl p-6 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-green-400 mb-4 flex items-center gap-2">
+                    <ChevronRight className="w-5 h-5" />
+                    Success!
+                  </h3>
+                  <div className="space-y-2">
+                    <p className="text-sm text-green-300">
+                      {results.summary.successful} of {results.summary.total} tasks created
+                    </p>
+                    {results.errors.length > 0 && (
+                      <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                        <p className="text-xs text-yellow-400 mb-2">Some tasks had errors:</p>
+                        {results.errors.map((error, index) => (
+                          <p key={index} className="text-xs text-yellow-300">
+                            • {error.activity}: {error.error}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Examples Tab */}
+        {activeTab === 'examples' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {examples.map((example, index) => (
+              <div key={index} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl hover:border-purple-400/30 transition-colors">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-lg">
+                    <Sparkles className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white">{example.title}</h3>
+                </div>
+                <p className="text-sm text-white/60 mb-4">{example.description}</p>
+                <div className="space-y-3">
+                  <div className="p-3 bg-white/5 rounded-lg">
+                    <p className="text-xs text-white/40 mb-1">Sample Prompt:</p>
+                    <p className="text-xs text-white/80 italic">"{example.prompt}"</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleExampleSelect(example);
+                      setActiveTab('upload');
+                    }}
+                    className="w-full px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-colors"
+                  >
+                    Use This Example
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Saved Schedules Tab */}
+        {activeTab === 'saved' && (
+          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Saved Schedules
+              </h3>
+              <span className="text-sm text-white/60">Coming soon...</span>
+            </div>
+            <div className="text-center py-12">
+              <FileText className="w-12 h-12 text-white/20 mx-auto mb-4" />
+              <p className="text-white/60">No saved schedules yet</p>
+              <p className="text-sm text-white/40 mt-2">Your processed schedules will appear here</p>
+            </div>
+          </div>
+        )}
+
+        {/* Preview Modal */}
+        {showPreview && previewData && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-6">
+            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              <h3 className="text-xl font-semibold text-white mb-4">Schedule Preview</h3>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {previewData.activities.map((activity, index) => (
+                  <div key={index} className="p-4 bg-white/5 rounded-lg border border-white/10">
+                    <p className="text-sm font-medium text-white">{activity.title}</p>
+                    <p className="text-xs text-white/60 mt-1">
+                      {activity.day} • {activity.start_time} - {activity.end_time}
+                      {activity.location && ` • ${activity.location}`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={() => setShowPreview(false)}
+                  className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPreview(false);
+                    handleUpload();
+                  }}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-colors"
+                >
+                  Create These Tasks
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
