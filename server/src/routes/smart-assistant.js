@@ -1,7 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
-import { createTaskReminders, getGoogleAuth, getGoogleCalendarEvents, bulkDeleteCalendarEvents, bulkUpdateCalendarEvents } from '../google-integration.js';
+import { createTaskReminders, getGoogleAuth, getGoogleCalendarEvents, bulkDeleteCalendarEvents, bulkUpdateCalendarEvents, getGoogleTasks, bulkDeleteGoogleTasks } from '../google-integration.js';
 import { google } from 'googleapis';
 import { cohere } from '../ai.js';
 
@@ -232,12 +232,113 @@ async function executeAICommand(analysis, sessionId, originalCommand) {
   }
 }
 
+async function createRandomReminders(count, dateRange, sessionId, originalCommand) {
+  console.log('=== CREATING RANDOM REMINDERS ===');
+  console.log('Count:', count, 'DateRange:', dateRange);
+  
+  const randomReminderTitles = [
+    'Take a stretch break',
+    'Drink water',
+    'Check email',
+    'Review tasks',
+    'Quick meditation',
+    'Walk around',
+    'Healthy snack',
+    'Deep breathing',
+    'Posture check',
+    'Eye rest break',
+    'Organize workspace',
+    'Plan next task',
+    'Update to-do list',
+    'Call a friend',
+    'Listen to music',
+    'Read article',
+    'Backup files',
+    'Clear desktop',
+    'Check calendar',
+    'Team sync'
+  ];
+  
+  const results = [];
+  const reminderDates = [];
+  
+  // Generate dates for "this week"
+  if (dateRange === 'this week') {
+    const today = new Date();
+    const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - currentDay); // Start of week (Sunday)
+    
+    for (let i = 0; i < Math.min(count, 7); i++) {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + i);
+      reminderDates.push(date.toISOString().split('T')[0]);
+    }
+  } else {
+    // Default to today if no date range
+    reminderDates.push(new Date().toISOString().split('T')[0]);
+  }
+  
+  // Create random reminders
+  for (let i = 0; i < count; i++) {
+    const reminderId = uuidv4();
+    const reminderDate = reminderDates[i % reminderDates.length];
+    const randomTitle = randomReminderTitles[Math.floor(Math.random() * randomReminderTitles.length)];
+    const reminderTime = generateRandomTime();
+    
+    try {
+      // Save to database
+      await query(
+        `INSERT INTO reminders (id, user_id, title, reminder_time, reminder_date, message, created_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [reminderId, sessionId, randomTitle, reminderTime, reminderDate, `Created via AI: "${originalCommand}"`]
+      );
+      console.log(`Random Reminder ${i + 1} saved to database`);
+    } catch (dbError) {
+      console.log('Database save failed, table might not exist:', dbError.message);
+    }
+    
+    // Try to create Google reminder
+    try {
+      const googleDateTime = formatTimeForGoogle(reminderTime, reminderDate);
+      await createTaskReminders(sessionId, [{
+        title: randomTitle,
+        reminder_minutes: 15,
+        due_date: googleDateTime,
+        type: 'reminder'
+      }]);
+    } catch (googleError) {
+      console.log('Google reminder creation failed, saved to database only');
+    }
+    
+    results.push({
+      reminderId,
+      title: randomTitle,
+      time: reminderTime,
+      date: reminderDate
+    });
+  }
+  
+  return {
+    type: 'reminder_created',
+    count: results.length,
+    reminders: results,
+    message: `Created ${results.length} random reminders for this week with various activities`
+  };
+}
+
 async function createAIReminder(parameters, sessionId, originalCommand) {
   console.log('=== CREATING AI REMINDER ===');
   console.log('Parameters:', parameters);
   
-  const { title, time, dateRange, count } = parameters;
-  console.log('Destructured parameters:', { title, time, dateRange, count });
+  const { title, time, date, dateRange, count } = parameters;
+  const { dateRange: filterDateRange } = parameters.filters || {};
+  console.log('Destructured parameters:', { title, time, date, dateRange, count, filterDateRange });
+  
+  // Handle random reminders (no specific title provided)
+  if (!title && count > 1) {
+    return await createRandomReminders(count, filterDateRange, sessionId, originalCommand);
+  }
   
   if (!title) {
     return {
@@ -246,7 +347,7 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
       missingParameters: ['title'],
       examples: [
         "Create reminder to call mom at 5pm",
-        "Remind me to study math at 3pm tomorrow",
+        "Remind me to study math at 3pm tomorrow", 
         "Create 5 random reminders this week"
       ]
     };
@@ -346,7 +447,7 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
       // Save to database
       await query(
         `INSERT INTO reminders (id, user_id, title, reminder_time, reminder_date, message, created_at) 
-         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
         [reminderId, sessionId, title, reminderTime, reminderDate, `Created via AI: "${originalCommand}"`]
       );
       console.log(`AI Reminder ${i + 1} saved to database`);
@@ -460,7 +561,7 @@ async function createReminderCommand(command, sessionId) {
     try {
       await query(
         `INSERT INTO reminders (id, user_id, title, reminder_time, reminder_date, message, created_at) 
-         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
         [reminderId, sessionId, reminderText, time, date, `Created via voice: "${command}"`]
       );
       console.log('Reminder saved to database');
@@ -821,7 +922,7 @@ function formatTime(dateTime) {
 
 async function deleteCalendarReminders(parameters, sessionId, originalCommand) {
   try {
-    console.log('=== DELETING CALENDAR REMINDERS ===');
+    console.log('=== DELETING CALENDAR REMINDERS AND TASKS ===');
     console.log('Parameters:', parameters);
     
     // Convert date parameter to filters
@@ -859,13 +960,34 @@ async function deleteCalendarReminders(parameters, sessionId, originalCommand) {
     
     // Get all events from Google Calendar
     const events = await getGoogleCalendarEvents(sessionId, filters);
-    console.log('Found events:', events.length);
+    console.log('Found calendar events:', events.length);
+    
+    // Get all tasks from Google Tasks
+    const tasks = await getGoogleTasks(sessionId, filters);
+    console.log('Found Google Tasks:', tasks.length);
     
     // Filter events based on criteria
     const eventsToDelete = filterEventsByCriteria(events, filters);
-    console.log('Events to delete:', eventsToDelete.length);
+    console.log('Calendar events to delete:', eventsToDelete.length);
     
-    if (eventsToDelete.length === 0) {
+    // Filter tasks based on criteria (matching titles with calendar events)
+    const tasksToDelete = tasks.filter(task => {
+      // Only delete tasks that match our reminder pattern
+      // Check if task title matches any of the calendar events we're deleting
+      const matchingEvent = eventsToDelete.find(event => 
+        event.summary && (
+          event.summary.includes(task.title) || 
+          event.summary.replace('Task Reminder: ', '') === task.title
+        )
+      );
+      
+      // Additional safety: Only delete if there's a matching calendar event
+      // This prevents deleting unrelated tasks when no calendar events match
+      return matchingEvent !== undefined;
+    });
+    console.log('Google Tasks to delete:', tasksToDelete.length);
+    
+    if (eventsToDelete.length === 0 && tasksToDelete.length === 0) {
       return {
         type: 'no_events_found',
         message: `No reminders found matching your criteria: ${originalCommand}`,
@@ -873,16 +995,23 @@ async function deleteCalendarReminders(parameters, sessionId, originalCommand) {
       };
     }
     
-    // Delete the events
-    const results = await bulkDeleteCalendarEvents(sessionId, eventsToDelete.map(e => e.id));
+    // Delete the calendar events
+    const calendarResults = await bulkDeleteCalendarEvents(sessionId, eventsToDelete.map(e => e.id));
+    
+    // Delete the Google Tasks
+    const taskResults = await bulkDeleteGoogleTasks(sessionId, tasksToDelete.map(t => t.id));
     
     return {
       type: 'reminders_deleted',
-      deleted: results.deleted.length,
-      failed: results.failed.length,
-      message: `Deleted ${results.deleted.length} reminders matching: ${originalCommand}`,
-      deletedEvents: results.deleted,
-      failedEvents: results.failed
+      calendarDeleted: calendarResults.deleted.length,
+      calendarFailed: calendarResults.failed.length,
+      tasksDeleted: taskResults.deleted.length,
+      tasksFailed: taskResults.failed.length,
+      message: `Deleted ${calendarResults.deleted.length} calendar events and ${taskResults.deleted.length} Google Tasks matching: ${originalCommand}`,
+      deletedEvents: calendarResults.deleted,
+      failedEvents: calendarResults.failed,
+      deletedTasks: taskResults.deleted,
+      failedTasks: taskResults.failed
     };
     
   } catch (error) {

@@ -16,6 +16,7 @@ export default function SchedulePage() {
   const [previewData, setPreviewData] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [savedSchedules, setSavedSchedules] = useState([]);
+  const [expandedActivity, setExpandedActivity] = useState(null);
   
   const fileInputRef = useRef(null);
 
@@ -378,15 +379,41 @@ export default function SchedulePage() {
           <div className="relative max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/15 bg-black/50 shadow-[0_25px_70px_-55px_rgba(79,70,229,0.7)] backdrop-blur-2xl">
             <div className="border-b border-white/10 px-6 py-5">
               <h3 className="text-xl font-semibold text-white">Extraction preview</h3>
-              <p className="text-xs text-white/50">Review the generated activities before creating tasks.</p>
+              <p className="text-xs text-white/50">Review the generated activities before creating tasks. Click any activity to expand it.</p>
             </div>
             <div className="max-h-[55vh] overflow-y-auto px-6 py-5 space-y-3">
               {previewData.activities.map((activity, index) => (
-                <div key={index} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">
-                  <div className="font-medium text-white">{activity.title}</div>
-                  <div className="text-xs text-white/50">
-                    {activity.day} • {activity.start_time} - {activity.end_time}
-                    {activity.location && ` • ${activity.location}`}
+                <div 
+                  key={index} 
+                  className={`rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 transition-all cursor-pointer hover:bg-white/10 ${
+                    expandedActivity === index ? 'ring-2 ring-purple-400/50' : ''
+                  }`}
+                  onClick={() => setExpandedActivity(expandedActivity === index ? null : index)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-medium text-white break-words whitespace-pre-wrap ${
+                        expandedActivity === index ? '' : 'line-clamp-2'
+                      }`}>
+                        {activity.title}
+                      </div>
+                      <div className="text-xs text-white/50 mt-1">
+                        {activity.day} • {activity.start_time} - {activity.end_time}
+                        {activity.location && ` • ${activity.location}`}
+                      </div>
+                      {activity.description && (
+                        <div className={`text-xs text-white/60 mt-2 break-words whitespace-pre-wrap ${
+                          expandedActivity === index ? '' : 'line-clamp-1'
+                        }`}>
+                          {activity.description}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight 
+                      className={`h-4 w-4 text-white/40 transition-transform flex-shrink-0 mt-1 ${
+                        expandedActivity === index ? 'rotate-90' : ''
+                      }`}
+                    />
                   </div>
                 </div>
               ))}

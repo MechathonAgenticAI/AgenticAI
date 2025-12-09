@@ -219,9 +219,55 @@ async function getGoogleAuth(sessionId) {
 
     // Check if token is expired
     if (expires_at && new Date(expires_at) < new Date()) {
-      // TODO: Implement token refresh
-      console.log('Google token expired, need refresh');
-      return null;
+      console.log('Google token expired, attempting refresh...');
+      
+      if (!refresh_token) {
+        console.log('No refresh token available, user needs to re-authenticate');
+        return null;
+      }
+      
+      try {
+        // Create OAuth2 client for refresh
+        const oauth2Client = new google.auth.OAuth2(
+          process.env.GOOGLE_CLIENT_ID,
+          process.env.GOOGLE_CLIENT_SECRET,
+          process.env.GOOGLE_REDIRECT_URI
+        );
+        
+        oauth2Client.setCredentials({ refresh_token });
+        
+        // Refresh the token
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        const newAccessToken = credentials.access_token;
+        const newExpiryDate = credentials.expiry_date;
+        
+        console.log('Token refreshed successfully');
+        
+        // Update database with new token
+        await query(`
+          UPDATE user_integrations 
+          SET access_token = $1, expires_at = $2, updated_at = NOW()
+          WHERE user_id = $3 AND service = 'google'
+        `, [newAccessToken, newExpiryDate ? new Date(newExpiryDate).toISOString() : null, sessionId]);
+        
+        // Set the new credentials
+        oauth2Client.setCredentials(credentials);
+        
+        // Store in memory for future use
+        oauth2Clients.set(sessionId, oauth2Client);
+        
+        return oauth2Client;
+      } catch (refreshError) {
+        console.error('Failed to refresh Google token:', refreshError.message);
+        
+        // If refresh fails, remove the stored tokens and require re-authentication
+        await query(`
+          DELETE FROM user_integrations 
+          WHERE user_id = $1 AND service = 'google'
+        `, [sessionId]);
+        
+        return null;
+      }
     }
 
     const oauth2Client = new google.auth.OAuth2(
@@ -382,7 +428,64 @@ export async function bulkDeleteCalendarEvents(sessionId, eventIds) {
   return results;
 }
 
-// Update multiple calendar events
+// Delete multiple Google Tasks
+export async function bulkDeleteGoogleTasks(sessionId, taskIds) {
+  const auth = await getGoogleAuth(sessionId);
+  if (!auth) {
+    throw new Error('Google Tasks not connected');
+  }
+
+  const tasks = google.tasks({ version: 'v1', auth });
+  const results = { deleted: [], failed: [] };
+
+  for (const taskId of taskIds) {
+    try {
+      await tasks.tasks.delete({
+        tasklist: '@default',
+        task: taskId
+      });
+      results.deleted.push(taskId);
+    } catch (error) {
+      console.error(`Failed to delete task ${taskId}:`, error);
+      results.failed.push({ taskId, error: error.message });
+    }
+  }
+
+  return results;
+}
+
+// Get all Google Tasks
+export async function getGoogleTasks(sessionId, filters = {}) {
+  const auth = await getGoogleAuth(sessionId);
+  if (!auth) {
+    throw new Error('Google Tasks not connected');
+  }
+
+  const tasks = google.tasks({ version: 'v1', auth });
+
+  try {
+    const response = await tasks.tasks.list({
+      tasklist: '@default',
+      showCompleted: false,
+      showHidden: false,
+      dueMin: filters.startDate ? new Date(filters.startDate).toISOString() : undefined,
+      dueMax: filters.endDate ? new Date(filters.endDate + 'T23:59:59').toISOString() : undefined
+    });
+
+    const taskList = response.data.items || [];
+    return taskList.map(task => ({
+      id: task.id,
+      title: task.title,
+      notes: task.notes,
+      due: task.due,
+      completed: task.completed,
+      updated: task.updated
+    }));
+  } catch (error) {
+    console.error('Failed to fetch Google Tasks:', error);
+    throw error;
+  }
+}
 export async function bulkUpdateCalendarEvents(sessionId, updates) {
   const auth = await getGoogleAuth(sessionId);
   if (!auth) {

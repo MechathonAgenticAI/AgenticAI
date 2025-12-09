@@ -139,7 +139,7 @@ export default function TaskBoard({ socket }) {
         </div>
       </div>
 
-      <div className="space-y-3 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-4 shadow-[0_20px_60px_-45px_rgba(236,72,153,0.4)] backdrop-blur-2xl sm:p-6">
+      <div className="space-y-4 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-8 shadow-[0_20px_60px_-45px_rgba(236,72,153,0.4)] backdrop-blur-2xl">
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/15 bg-white/5 px-6 py-12 text-center text-white/60">
             <ClipboardList className="h-8 w-8 text-white/30" />
@@ -152,34 +152,23 @@ export default function TaskBoard({ socket }) {
           tasks.map((t, index) => (
             <div
               key={t.id}
-              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition-all duration-200 hover:-translate-y-1 hover:border-emerald-400/40 hover:bg-emerald-500/10"
+              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] p-4 min-h-[100px] transition-all duration-200 hover:-translate-y-1 hover:border-emerald-400/40 hover:bg-emerald-500/10"
             >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-mono text-white/60 leading-none">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-mono text-white/60 leading-none flex-shrink-0">
                       #{String(index + 1).padStart(2, '0')}
                     </span>
-                    <h3 className="truncate text-lg font-semibold text-white">{t.title}</h3>
+                    <h3 className="text-lg font-semibold text-white break-words whitespace-pre-wrap">{t.title}</h3>
                   </div>
                   <div className="text-xs font-mono uppercase tracking-[0.25em] text-white/30">{t.id.substring(0, 8)}…</div>
                   {t.description && (
-                    <p className="text-sm text-white/70 line-clamp-2">{t.description}</p>
+                    <p className="text-sm text-white/70 break-words whitespace-pre-wrap">{t.description}</p>
                   )}
                 </div>
 
-                <div className="flex flex-shrink-0 items-center gap-2 text-xs">
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-medium backdrop-blur leading-none ${
-                      t.status === 'done'
-                        ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
-                        : 'border-slate-400/30 bg-slate-500/15 text-slate-200'
-                    }`}
-                  >
-                    {t.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDashed className="h-3.5 w-3.5" />}
-                    {t.status}
-                  </span>
-
+                <div className="flex flex-shrink-0 items-center gap-2 text-xs mt-2 lg:mt-0">
                   {t.status !== 'done' && (
                     <button
                       onClick={() => markDone(t.id)}
