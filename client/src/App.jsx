@@ -5,7 +5,6 @@ import Chat from './components/Chat.jsx';
 import TaskBoard from './components/TaskBoard.jsx';
 import SchedulePage from './pages/SchedulePage.jsx';
 import SmartAssistant from './components/SmartAssistant.jsx';
-import CalendarManager from './components/CalendarManager.jsx';
 
 const socket = io('http://localhost:4000');
 
@@ -54,12 +53,6 @@ export default function App() {
                 >
                   Smart Assistant
                 </a>
-                <a 
-                  href="/calendar-manager" 
-                  className="px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg text-white font-medium hover:from-orange-600 hover:to-red-600 transition-colors"
-                >
-                  Calendar Manager
-                </a>
                 <p className="text-sm text-white/70 font-medium">Realtime, Intent-driven UI</p>
               </div>
             </div>
@@ -77,7 +70,6 @@ export default function App() {
       } />
       <Route path="/schedule" element={<SchedulePage />} />
       <Route path="/smart-assistant" element={<SmartAssistant />} />
-      <Route path="/calendar-manager" element={<CalendarManager />} />
     </Routes>
   );
 }
