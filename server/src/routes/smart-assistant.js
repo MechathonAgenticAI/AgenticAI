@@ -108,7 +108,7 @@ Respond with a JSON object containing:
     "title": "extracted title if creating",
     "time": "extracted time like '5pm', '2:30pm'",
     "date": "extracted date like 'today', 'tomorrow', 'Thursday', '13 December'",
-    "dateRange": "if mentioned like '14dec to 20 dec', 'this week'",
+    "dateRange": "if mentioned like '14dec to 20 dec', '9 Dec to 13 Dec', '14 dec and 16 dec'",
     "timeRange": {"start": "1pm", "end": "3pm"} if mentioned,
     "shiftAmount": number if shifting (CALCULATE THIS EXACTLY),
     "shiftUnit": "days|weeks" if shifting,
@@ -141,6 +141,7 @@ IMPORTANT CALCULATION RULES:
   * Monday=1, Tuesday=2, Wednesday=3, Thursday=4, Friday=5, Saturday=6, Sunday=7
   * Formula: (target_day - source_day + 7) % 7 or add 7 if target < source
 - For date ranges, extract start and end dates
+- For "and" dates like "14 dec and 16 dec", put BOTH dates in dateRange
 - For time ranges, extract both start and end times
 - If shifting TO a specific date, put that date in parameters.date
 
@@ -235,7 +236,8 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
   console.log('=== CREATING AI REMINDER ===');
   console.log('Parameters:', parameters);
   
-  const { title, time, date, dateRange, count } = parameters;
+  const { title, time, dateRange, count } = parameters;
+  console.log('Destructured parameters:', { title, time, dateRange, count });
   
   if (!title) {
     return {
@@ -257,11 +259,13 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
   const reminderDates = [];
   
   if (dateRange) {
-    // Parse date range like "14dec to 20 dec"
-    const dateRangeMatch = dateRange.match(/(\d{1,2}\w+)\s*to\s*(\d{1,2}\w+)/i);
+    // Parse date range like "9 dec to 13 dec", "14dec to 20 dec"
+    const dateRangeMatch = dateRange.match(/(\d{1,2})\s*([a-z]{3,4})\s*to\s*(\d{1,2})\s*([a-z]{3,4})/i);
     if (dateRangeMatch) {
-      const startDate = parseDateText(dateRangeMatch[1]);
-      const endDate = parseDateText(dateRangeMatch[2]);
+      const startDate = parseDateText(dateRangeMatch[1] + dateRangeMatch[2]);
+      const endDate = parseDateText(dateRangeMatch[3] + dateRangeMatch[4]);
+      
+      console.log('Parsed date range:', { startDate, endDate, dateRangeMatch });
       
       if (startDate && endDate) {
         const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
@@ -271,6 +275,32 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
           const currentDate = new Date(startDate);
           currentDate.setDate(startDate.getDate() + i);
           reminderDates.push(currentDate.toISOString().split('T')[0]);
+        }
+      }
+    } else {
+      // Parse "and" dates like "14 dec and 16 dec"
+      const andDatesMatch = dateRange.match(/(\d{1,2})\s*([a-z]{3,4})\s*and\s*(\d{1,2})\s*([a-z]{3,4})/i);
+      if (andDatesMatch) {
+        const date1 = parseDateText(andDatesMatch[1] + andDatesMatch[2]);
+        const date2 = parseDateText(andDatesMatch[3] + andDatesMatch[4]);
+        
+        console.log('Parsed "and" dates:', { date1, date2, andDatesMatch });
+        
+        if (date1) reminderDates.push(date1.toISOString().split('T')[0]);
+        if (date2) reminderDates.push(date2.toISOString().split('T')[0]);
+      } else {
+        // Handle "to" dates that should be "and" (like "14 December to 16 December")
+        const toDatesMatch = dateRange.match(/(\d{1,2})\s*([a-z]{3,4})\s*to\s*(\d{1,2})\s*([a-z]{3,4})/i);
+        if (toDatesMatch && dateRange.includes('December')) {
+          const date1 = parseDateText(toDatesMatch[1] + toDatesMatch[2]);
+          const date2 = parseDateText(toDatesMatch[3] + toDatesMatch[4]);
+          
+          console.log('Parsed "to" dates as separate:', { date1, date2, toDatesMatch });
+          
+          if (date1) reminderDates.push(date1.toISOString().split('T')[0]);
+          if (date2) reminderDates.push(date2.toISOString().split('T')[0]);
+        } else {
+          console.log('Date range regex failed for:', dateRange);
         }
       }
     }
@@ -294,8 +324,23 @@ async function createAIReminder(parameters, sessionId, originalCommand) {
     const reminderId = uuidv4();
     const reminderDate = reminderDates[i] || new Date().toISOString().split('T')[0];
     
-    // Generate random time if creating multiple and no specific time given
-    const reminderTime = time || (reminderCount > 1 ? generateRandomTime() : '09:00');
+    // Generate time based on timeRange or single time
+    let reminderTime;
+    if (time && time.start && time.end) {
+      // Generate random time within the range
+      const startTime = parseTime(time.start);
+      const endTime = parseTime(time.end);
+      const startMinutes = startTime[0] * 60 + startTime[1];
+      const endMinutes = endTime[0] * 60 + endTime[1];
+      const randomMinutes = startMinutes + Math.floor(Math.random() * (endMinutes - startMinutes));
+      reminderTime = `${Math.floor(randomMinutes / 60)}:${(randomMinutes % 60).toString().padStart(2, '0')}`;
+    } else if (time) {
+      reminderTime = time;
+    } else if (reminderCount > 1) {
+      reminderTime = generateRandomTime();
+    } else {
+      reminderTime = '09:00';
+    }
     
     try {
       // Save to database
