@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { Bot, CalendarRange, LayoutDashboard } from 'lucide-react';
+import { Bot, CalendarRange, LayoutDashboard, ExternalLink } from 'lucide-react';
 import SchedulePage from './pages/SchedulePage.jsx';
 import SmartAssistant from './components/SmartAssistant.jsx';
 import WorkspacePage from './pages/WorkspacePage.jsx';
@@ -29,6 +29,18 @@ export default function App() {
       socket.off('agent:needs_confirmation', onNeedsConfirm);
     }
   }, []);
+
+  const handleGoogleConnect = async () => {
+  try {
+    const response = await fetch(`http://localhost:4000/api/google/auth?sessionId=${sessionId}`);
+    const data = await response.json();
+    if (data.authUrl) {
+      window.open(data.authUrl, '_blank');
+    }
+  } catch (error) {
+    console.error('Failed to get Google auth URL:', error);
+  }
+};
 
   const navCards = useMemo(() => ([
     {
@@ -79,13 +91,22 @@ export default function App() {
                     Launch into dedicated workspaces, parse complex schedules, or collaborate with your AI copilot—everything starts here.
                   </p>
                 </div>
-                <div className="relative rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_25px_80px_-40px_rgba(78,205,196,0.6)] backdrop-blur-xl lg:w-80">
-                  <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-gradient-to-br from-sky-500/40 to-emerald-500/40 blur-2xl"></div>
-                  <p className="leading-relaxed">
-                    • Realtime sockets keep tasks synced<br />
-                    • Cohere-powered intent parsing<br />
-                    • Seamless calendar & reminder automation
-                  </p>
+                <div className="flex flex-col gap-4">
+                  <button
+                    onClick={handleGoogleConnect}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-400/40 bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500/30"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Connect Google
+                  </button>
+                  <div className="relative rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_25px_80px_-40px_rgba(78,205,196,0.6)] backdrop-blur-xl lg:w-80">
+                    <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-gradient-to-br from-sky-500/40 to-emerald-500/40 blur-2xl"></div>
+                    <p className="leading-relaxed">
+                      • Realtime sockets keep tasks synced<br />
+                      • Cohere-powered intent parsing<br />
+                      • Seamless calendar & reminder automation
+                    </p>
+                  </div>
                 </div>
               </div>
             </header>

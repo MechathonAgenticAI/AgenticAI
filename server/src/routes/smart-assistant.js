@@ -730,6 +730,22 @@ function extractDate(command) {
   if (command.includes('today')) return today.toISOString().split('T')[0];
   if (command.includes('tomorrow')) return tomorrow.toISOString().split('T')[0];
   
+  // Handle day names
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < dayNames.length; i++) {
+    const dayName = dayNames[i];
+    if (command.toLowerCase().includes(dayName)) {
+      const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const targetDay = i; // 0 = Sunday, 1 = Monday, etc.
+      
+      let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+      if (daysUntilTarget === 0) daysUntilTarget = 7; // If today is that day, use next week
+      
+      const targetDate = new Date(today.getTime() + daysUntilTarget * 24 * 60 * 60 * 1000);
+      return targetDate.toISOString().split('T')[0];
+    }
+  }
+  
   // Extract specific date patterns
   const dateMatch = command.match(/(\d{4}-\d{2}-\d{2})/);
   if (dateMatch) return dateMatch[1];

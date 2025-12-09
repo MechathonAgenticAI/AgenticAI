@@ -2,9 +2,20 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import TaskBoard from '../components/TaskBoard.jsx';
 import Chat from '../components/Chat.jsx';
-import { Sparkles, ChevronRight, Share2 } from 'lucide-react';
+import { Sparkles, ChevronRight, Share2, ExternalLink } from 'lucide-react';
 
 export default function WorkspacePage({ socket, sessionId, confirmations, setConfirmations }) {
+  const handleGoogleConnect = async () => {
+    try {
+      const response = await fetch(`http://localhost:4000/api/google/auth?sessionId=${sessionId}`);
+      const data = await response.json();
+      if (data.authUrl) {
+        window.open(data.authUrl, '_blank');
+      }
+    } catch (error) {
+      console.error('Failed to get Google auth URL:', error);
+    }
+  };
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#05060a] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(129,140,248,0.22),_transparent_55%)]"></div>
@@ -70,7 +81,16 @@ export default function WorkspacePage({ socket, sessionId, confirmations, setCon
                   <h2 className="text-2xl font-semibold text-white">Task Command Board</h2>
                   <p className="text-sm text-white/60">Stay aligned with the agent’s latest task operations and updates.</p>
                 </div>
-                <Share2 className="hidden h-5 w-5 text-white/40 sm:block" />
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleGoogleConnect}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-400/40 bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500/30"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Connect Google
+                  </button>
+                  <Share2 className="hidden h-5 w-5 text-white/40 sm:block" />
+                </div>
               </div>
             </div>
             <div className="relative p-6 sm:p-8">
