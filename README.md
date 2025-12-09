@@ -1,6 +1,6 @@
-# Agentic Bridge (React + Express + Postgres + pgvector)
+# Agentic Bridge
 
-A full-stack agent that parses natural language into JSON intents, performs safe CRUD actions against Postgres, stores vector memory with pgvector, and updates the UI in realtime via Socket.IO. Includes voice input and TTS.
+A full-stack AI-powered productivity hub with a glassy black UI. It parses natural language into actionable intents, manages tasks and schedules, syncs with Google services, and updates everything in real-time via Socket.IO.
 
 ## Quick start
 
@@ -25,8 +25,25 @@ npm run dev
 
 - server/.env (see server/.env.example)
 
+## Features
+
+- **Smart Assistant**: Natural language commands powered by Cohere AI. Create tasks, set reminders, or manage schedules via text or voice.
+- **Task & Agent Workspace**: Two-column layout with a task command board and live agent chat. All updates sync instantly via Socket.IO.
+- **Schedule Parser**: Upload schedule images; the AI extracts activities, times, and locations, then creates tasks/reminders.
+- **Google Integration**: Connect Google Calendar/Tasks to sync reminders and events automatically.
+- **Glassy Black Theme**: Modern glassmorphism UI with smooth animations and responsive design.
+
+## Architecture
+
+- **Frontend**: React + Vite + Tailwind CSS
+- **Backend**: Express.js + Socket.IO + PostgreSQL
+- **AI**: Cohere for intent parsing and schedule OCR
+- **Realtime**: Socket.IO for live task/chat updates
+- **Persistence**: PostgreSQL with vector embeddings for context
+
 ## Notes
 
-- Intent parsing uses local zero-shot models via `@xenova/transformers` (free). Embeddings use `all-MiniLM-L6-v2`.
-- All agent outputs are JSON; UI renders structured prompts and confirmations.
-- Realtime updates via Socket.IO push changes to the task board and notes without page reload.
+- All agent outputs are structured JSON; UI renders confirmations and prompts.
+- Voice input and TTS for hands-free interaction.
+- Session-based context for multi-turn conversations.
+- Responsive design works on desktop and mobile.
