@@ -158,110 +158,96 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-3xl"></div>
-      <div className="absolute inset-0 bg-gradient-to-t from-blue-900/20 via-transparent to-purple-900/20"></div>
-      
-      {/* Header */}
-      <header className="relative sticky top-0 z-10 backdrop-blur-xl bg-white/5 border-b border-white/10 shadow-xl">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/" className="text-white/60 hover:text-white transition-colors">
-                ← Back to Dashboard
-              </Link>
-              <div className="h-6 w-px bg-white/20"></div>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-lg">
-                  <Brain className="w-5 h-5 text-purple-400" />
-                </div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  Visual Schedule Parser
-                </h1>
-              </div>
+    <div className="relative min-h-screen overflow-hidden bg-[#05060a] text-white">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.2),_transparent_55%)]"></div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(236,72,153,0.18),_transparent_60%)]"></div>
+
+      <header className="relative z-20 border-b border-white/10 bg-black/60 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-12 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-4">
+            <Link to="/" className="inline-flex items-center gap-2 text-sm text-white/60 transition hover:text-white">
+              <ChevronRight className="h-4 w-4 rotate-180" /> Back to dashboard
+            </Link>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+              Visual Parser
             </div>
-            <div className="flex items-center gap-3">
-              <span className="px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400">
-                AI-Powered
-              </span>
-              <span className="px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-full text-xs text-blue-400">
-                Vision API
-              </span>
-              <span className="px-3 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded-full text-xs text-yellow-400">
-                Google: Manual Setup
-              </span>
-            </div>
+            <h1 className="text-4xl font-semibold tracking-tight text-white lg:text-5xl">
+              Transform any schedule into structured, agent-ready plans
+            </h1>
+            <p className="max-w-2xl text-base text-white/60">
+              Upload a timetable screenshot, tweak the extraction parameters, and let the agent create synced reminders across your workspace.
+            </p>
+          </div>
+
+          <div className="grid w-full max-w-xs gap-2 text-xs uppercase tracking-[0.35em] text-white/50">
+            <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-center">AI Vision</span>
+            <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-4 py-2 text-center">Pg Vector Memory</span>
+            <span className="rounded-full border border-pink-400/30 bg-pink-500/10 px-4 py-2 text-center">Calendar Sync</span>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="relative max-w-7xl mx-auto px-6 py-8 space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Upload & Settings */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Upload Area */}
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-lg">
-                  <ImageIcon className="w-5 h-5 text-purple-400" />
+      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-24 pt-12">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]">
+          <div className="space-y-8">
+            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_30px_90px_-50px_rgba(99,102,241,0.6)] backdrop-blur-2xl sm:p-8">
+              <div className="pointer-events-none absolute -left-16 -top-16 h-36 w-36 rounded-full bg-purple-500/20 blur-3xl"></div>
+              <div className="relative flex items-center gap-3">
+                <div className="rounded-2xl bg-white/10 p-3 text-purple-300">
+                  <ImageIcon className="h-6 w-6" />
                 </div>
-                <h2 className="text-xl font-semibold text-white">Upload Schedule Image</h2>
+                <div>
+                  <h2 className="text-2xl font-semibold text-white">Upload your schedule image</h2>
+                  <p className="text-sm text-white/60">PNG or JPG up to 10 MB. High contrast images produce the best extraction.</p>
+                </div>
               </div>
 
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-white/20 rounded-xl p-12 text-center cursor-pointer hover:border-purple-400/50 transition-colors bg-white/5"
+                className="mt-6 rounded-2xl border border-dashed border-white/15 bg-black/20 p-12 text-center transition hover:border-purple-400/40 hover:bg-purple-500/10"
               >
                 {preview ? (
                   <div className="space-y-4">
-                    <img src={preview} alt="Schedule preview" className="max-w-full max-h-96 mx-auto rounded-lg shadow-xl" />
-                    <p className="text-sm text-white/60">Click to change image</p>
+                    <img src={preview} alt="Schedule preview" className="mx-auto max-h-96 max-w-full rounded-2xl border border-white/10 shadow-[0_20px_50px_-30px_rgba(99,102,241,0.7)]" />
+                    <p className="text-sm text-white/60">Click to replace image</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <Upload className="w-16 h-16 text-purple-400 mx-auto" />
-                    <div>
-                      <p className="text-white font-medium text-lg">Drop your schedule image here</p>
-                      <p className="text-sm text-white/60">PNG, JPG up to 10MB</p>
+                  <div className="space-y-5">
+                    <Upload className="mx-auto h-16 w-16 text-purple-300" />
+                    <div className="space-y-2">
+                      <p className="text-lg font-medium text-white">Drop your timetable or choose a file</p>
+                      <p className="text-sm text-white/50">Supports weekly planners, class schedules, or meeting grids.</p>
                     </div>
                   </div>
                 )}
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-            </div>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+            </section>
 
-              {/* Settings */}
-              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <Settings className="w-5 h-5" />
-                    Settings
-                  </h3>
+            <section className="space-y-8">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_-55px_rgba(236,72,153,0.55)] backdrop-blur-2xl sm:p-7">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">Extraction Parameters</h3>
+                    <p className="text-sm text-white/60">Fine-tune how the agent interprets times, columns, and reminder offsets.</p>
+                  </div>
                   <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
+                    className="text-sm text-purple-300 transition hover:text-purple-200"
                   >
-                    {showAdvanced ? 'Hide' : 'Show'} Advanced
+                    {showAdvanced ? 'Hide advanced' : 'Show advanced'}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Reminder Time
-                    </label>
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="flex items-center gap-2 text-sm font-medium text-white/70">
+                      <Clock className="h-4 w-4" /> Reminder offset
+                    </span>
                     <select
                       value={reminderMinutes}
                       onChange={(e) => setReminderMinutes(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50"
                     >
                       <option value="5">5 minutes before</option>
                       <option value="10">10 minutes before</option>
@@ -269,182 +255,162 @@ export default function SchedulePage() {
                       <option value="30">30 minutes before</option>
                       <option value="60">1 hour before</option>
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      Week Start Date
-                    </label>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="flex items-center gap-2 text-sm font-medium text-white/70">
+                      <Calendar className="h-4 w-4" /> Week anchor date
+                    </span>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50"
                     />
-                  </div>
+                  </label>
                 </div>
 
                 {showAdvanced && (
-                  <div className="mt-6 p-4 bg-white/5 rounded-lg border border-white/10">
-                    <h4 className="text-sm font-medium text-white/80 mb-3">Advanced Options</h4>
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-3 text-sm text-white/60">
-                        <input type="checkbox" className="rounded" />
-                        <span>Auto-detect schedule type</span>
-                      </label>
-                      <label className="flex items-center gap-3 text-sm text-white/60">
-                        <input type="checkbox" className="rounded" />
-                        <span>Include breaks and free periods</span>
-                      </label>
-                      <label className="flex items-center gap-3 text-sm text-white/60">
-                        <input type="checkbox" className="rounded" defaultChecked />
-                        <span>Create Google Calendar events</span>
-                      </label>
-                    </div>
+                  <div className="mt-6 space-y-4 rounded-2xl border border-white/10 bg-black/30 p-5">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Advanced toggles</p>
+                    <label className="flex items-center gap-3 text-sm text-white/60">
+                      <input type="checkbox" className="rounded" /> Auto-detect schedule structure
+                    </label>
+                    <label className="flex items-center gap-3 text-sm text-white/60">
+                      <input type="checkbox" className="rounded" /> Capture breaks & empty slots
+                    </label>
+                    <label className="flex items-center gap-3 text-sm text-white/60">
+                      <input type="checkbox" className="rounded" defaultChecked /> Create Google events when possible
+                    </label>
                   </div>
                 )}
               </div>
 
-              {/* Custom Prompt */}
-              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <Zap className="w-5 h-5" />
-                  Custom Instructions
-                </h3>
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_70px_-55px_rgba(59,130,246,0.55)] backdrop-blur-2xl sm:p-7">
+                <h3 className="text-xl font-semibold text-white">Custom prompt</h3>
+                <p className="text-sm text-white/60">Guide the agent with extra context about instructors, locations, or columns.</p>
                 <textarea
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
-                  placeholder="E.g., 'This is my college schedule with labs and lectures. Extract room numbers and set 15-minute reminders.'"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent resize-none"
-                  rows={4}
+                  placeholder={'e.g. "This is my university timetable. Extract room numbers and tag labs as high-priority reminders."'}
+                  className="mt-4 h-32 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/30 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
                 />
               </div>
-            </div>
+            </section>
+          </div>
 
-            {/* Right Column - Examples & Actions */}
-            <div className="space-y-6">
-              {/* Quick Examples */}
-              {examples.length > 0 && (
-                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <Sparkles className="w-5 h-5" />
-                    Quick Examples
-                  </h3>
-                  <div className="space-y-3">
-                    {examples.map((example, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleExampleSelect(example)}
-                        className="w-full text-left p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors border border-white/10 group"
-                      >
-                        <p className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors">
-                          {example.title}
-                        </p>
-                        <p className="text-xs text-white/60 mt-1">{example.description}</p>
-                        <p className="text-xs text-purple-400 mt-2">
-                          {example.reminderMinutes} min reminders
-                        </p>
-                      </button>
-                    ))}
-                  </div>
+          <aside className="space-y-8">
+            {examples.length > 0 && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_70px_-55px_rgba(94,234,212,0.45)] backdrop-blur-2xl sm:p-7">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-teal-300" /> Quick templates
+                </h3>
+                <p className="mt-2 text-sm text-white/60">Use a ready-made preset to see how the parser behaves.</p>
+                <div className="mt-5 space-y-3">
+                  {examples.map((example, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleExampleSelect(example)}
+                      className="group w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-left transition hover:border-purple-300/40 hover:bg-purple-500/10"
+                    >
+                      <p className="text-sm font-medium text-white group-hover:text-white">{example.title}</p>
+                      <p className="text-xs text-white/50">{example.description}</p>
+                      <p className="text-xs text-purple-300">{example.reminderMinutes} minute reminders</p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_70px_-55px_rgba(244,114,182,0.45)] backdrop-blur-2xl sm:p-7">
+              <h3 className="text-lg font-semibold text-white">Actions</h3>
+
+              {error && (
+                <div className="rounded-2xl border border-red-400/30 bg-red-500/15 px-4 py-3 text-sm text-red-200">
+                  <AlertCircle className="mr-2 inline h-4 w-4" /> {error}
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                <h3 className="text-lg font-semibold text-white mb-4">Actions</h3>
-                
-                {error && (
-                  <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
-                    <AlertCircle className="w-4 h-4 text-red-400" />
-                    <p className="text-sm text-red-400">{error}</p>
+              <div className="space-y-3">
+                <button
+                  onClick={handlePreview}
+                  disabled={!selectedFile || isProcessing}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Eye className="h-4 w-4" /> {isProcessing ? 'Analyzing…' : 'Preview extraction'}
+                </button>
+                <button
+                  onClick={handleUpload}
+                  disabled={(!selectedFile && !previewData) || isProcessing}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/55 via-purple-500/55 to-blue-500/55 px-5 py-3 text-sm font-medium text-white shadow-[0_15px_40px_-25px_rgba(236,72,153,0.75)] transition hover:-translate-y-1 hover:border-fuchsia-300/60 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Zap className="h-4 w-4" /> {isProcessing ? 'Processing…' : 'Create all tasks'}
+                </button>
+              </div>
+            </section>
+
+            {results && (
+              <section className="rounded-3xl border border-emerald-400/30 bg-emerald-500/15 p-6 shadow-[0_25px_70px_-55px_rgba(16,185,129,0.45)] backdrop-blur-2xl sm:p-7">
+                <h3 className="text-lg font-semibold text-emerald-200 flex items-center gap-2">
+                  <ChevronRight className="h-5 w-5" /> AI execution summary
+                </h3>
+                <p className="mt-3 text-sm text-emerald-100">
+                  {results.summary.successful} of {results.summary.total} tasks created.
+                </p>
+                {results.errors.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-500/15 px-4 py-3 text-xs text-amber-100">
+                    <p className="font-semibold uppercase tracking-[0.3em] text-amber-200">Warnings</p>
+                    <div className="mt-2 space-y-1">
+                      {results.errors.map((issue, index) => (
+                        <p key={index}>• {issue.activity}: {issue.error}</p>
+                      ))}
+                    </div>
                   </div>
                 )}
-
-                <div className="space-y-3">
-                  <button
-                    onClick={handlePreview}
-                    disabled={!selectedFile || isProcessing}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    <Eye className="w-4 h-4" />
-                    {isProcessing ? 'Analyzing...' : 'Preview Schedule'}
-                  </button>
-                  <button
-                    onClick={handleUpload}
-                    disabled={!selectedFile || isProcessing}
-                    className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    <Zap className="w-4 h-4" />
-                    {isProcessing ? 'Processing...' : 'Create All Tasks'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Results */}
-              {results && (
-                <div className="bg-green-500/10 backdrop-blur-xl border border-green-500/20 rounded-2xl p-6 shadow-2xl">
-                  <h3 className="text-lg font-semibold text-green-400 mb-4 flex items-center gap-2">
-                    <ChevronRight className="w-5 h-5" />
-                    Success!
-                  </h3>
-                  <div className="space-y-2">
-                    <p className="text-sm text-green-300">
-                      {results.summary.successful} of {results.summary.total} tasks created
-                    </p>
-                    {results.errors.length > 0 && (
-                      <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                        <p className="text-xs text-yellow-400 mb-2">Some tasks had errors:</p>
-                        {results.errors.map((error, index) => (
-                          <p key={index} className="text-xs text-yellow-300">
-                            • {error.activity}: {error.error}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-          </div>
+              </section>
+            )}
+          </aside>
         </div>
-        {/* Saved schedules state retained for future use but button removed */}
-        {/* Preview Modal */}
-        {showPreview && previewData && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-6">
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-              <h3 className="text-xl font-semibold text-white mb-4">Schedule Preview</h3>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {previewData.activities.map((activity, index) => (
-                  <div key={index} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                    <p className="text-sm font-medium text-white">{activity.title}</p>
-                    <p className="text-xs text-white/60 mt-1">
-                      {activity.day} • {activity.start_time} - {activity.end_time}
-                      {activity.location && ` • ${activity.location}`}
-                    </p>
+      </main>
+
+      {showPreview && previewData && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-6 pb-16 pt-12 backdrop-blur">
+          <div className="relative max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/15 bg-black/50 shadow-[0_25px_70px_-55px_rgba(79,70,229,0.7)] backdrop-blur-2xl">
+            <div className="border-b border-white/10 px-6 py-5">
+              <h3 className="text-xl font-semibold text-white">Extraction preview</h3>
+              <p className="text-xs text-white/50">Review the generated activities before creating tasks.</p>
+            </div>
+            <div className="max-h-[55vh] overflow-y-auto px-6 py-5 space-y-3">
+              {previewData.activities.map((activity, index) => (
+                <div key={index} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">
+                  <div className="font-medium text-white">{activity.title}</div>
+                  <div className="text-xs text-white/50">
+                    {activity.day} • {activity.start_time} - {activity.end_time}
+                    {activity.location && ` • ${activity.location}`}
                   </div>
-                ))}
-              </div>
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => setShowPreview(false)}
-                  className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPreview(false);
-                    handleUpload();
-                  }}
-                  className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-colors"
-                >
-                  Create These Tasks
-                </button>
-              </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 border-t border-white/10 px-6 py-5">
+              <button
+                onClick={() => setShowPreview(false)}
+                className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowPreview(false);
+                  handleUpload();
+                }}
+                className="flex-1 rounded-2xl border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/55 via-purple-500/55 to-blue-500/55 px-4 py-3 text-sm font-medium text-white shadow-[0_15px_40px_-25px_rgba(236,72,153,0.75)] transition hover:-translate-y-0.5"
+              >
+                Create these tasks
+              </button>
             </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }

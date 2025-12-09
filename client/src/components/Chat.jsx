@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { Mic, Send, Check, X } from 'lucide-react';
+import { Mic, Send, Check, X, Waves, Loader2, Speech, Sparkles } from 'lucide-react';
 
 export default function Chat({ socket, sessionId, confirmations, setConfirmations }) {
   const [text, setText] = useState('');
@@ -180,89 +180,100 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
   };
 
   return (
-    <div className="backdrop-blur-lg bg-white/10 border border-white/20 rounded-2xl p-6 shadow-2xl space-y-6">
-      <h2 className="text-2xl font-bold text-white bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Agent</h2>
-      
-      <div className="flex gap-3">
-        <input 
-          className={`flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-transparent backdrop-blur-sm transition-all duration-200 ${
-            aiProcessing ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-          placeholder="Tell the agent what to do..." 
-          value={text} 
-          onChange={(e)=>setText(e.target.value)} 
-          onKeyDown={(e)=>{if(e.key==='Enter' && !aiProcessing) send();}} 
-          disabled={aiProcessing}
-        />
-        <button 
-          onClick={send} 
-          disabled={aiProcessing}
-          className={`inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-lg font-medium transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm ${
-            aiProcessing ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-        >
-          <Send size={18} /> {aiProcessing ? 'Processing...' : 'Send'}
-        </button>
-        <button 
-          onClick={listening ? stopVoice : startVoice} 
-          className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm ${
-            listening 
-              ? 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white' 
-              : 'bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white'
-          }`}
-        >
-          <Mic size={18} /> {listening ? 'Stop' : 'Speak'}
-        </button>
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/[0.05] p-5 backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-semibold text-white">Chat with the agent</h2>
+          <p className="text-sm text-white/60">Confirm plans, provide clarifications, and view structured intents as JSON.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[0.68rem] font-medium uppercase tracking-[0.08em] text-white/50">
+          <span className={`inline-flex items-center gap-2 rounded-full border border-white/12 px-3 py-1 leading-none backdrop-blur ${aiProcessing ? 'bg-emerald-500/15 text-emerald-200' : 'bg-white/5 text-white/70'}`}>
+            <Loader2 className={`h-3.5 w-3.5 ${aiProcessing ? 'animate-spin' : ''}`} />
+            {aiProcessing ? 'Processing' : 'Idle'}
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-3 py-1 leading-none text-white/70">
+            <Speech className="h-3.5 w-3.5" />
+            {listening ? 'Listening' : 'Voice-ready'}
+          </span>
+        </div>
+      </header>
+
+      <div className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-[0_20px_60px_-40px_rgba(168,85,247,0.55)] backdrop-blur-2xl">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+          <input
+            className={`flex-1 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-base text-white placeholder:text-white/45 shadow-inner shadow-black/30 focus:outline-none focus:ring-2 focus:ring-purple-400/40 ${aiProcessing ? 'opacity-40 cursor-not-allowed' : ''}`}
+            placeholder="Tell the agent what to do..."
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !aiProcessing) send();
+            }}
+            disabled={aiProcessing}
+          />
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-nowrap">
+            <button
+              onClick={send}
+              disabled={aiProcessing}
+              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-fuchsia-500/40 bg-gradient-to-r from-fuchsia-500/60 via-purple-500/60 to-blue-500/50 text-white shadow-[0_12px_30px_-18px_rgba(168,85,247,0.8)] transition-all duration-200 hover:-translate-y-0.5 hover:border-fuchsia-400/60 hover:shadow-[0_18px_40px_-20px_rgba(59,130,246,0.8)] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/40"
+            >
+              {aiProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send size={18} />}
+            </button>
+
+            <button
+              onClick={listening ? stopVoice : startVoice}
+              className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl border transition-all duration-200 ${
+                listening
+                  ? 'border-rose-400/50 bg-gradient-to-r from-rose-500/60 to-orange-500/60 text-white shadow-[0_12px_30px_-18px_rgba(248,113,113,0.8)] hover:-translate-y-0.5'
+                  : 'border-white/10 bg-white/10 text-white/80 hover:border-white/20 hover:text-white'
+              }`}
+            >
+              <Mic size={18} />
+            </button>
+          </div>
+        </div>
+
+        {(aiProcessing || autoSubmitting) && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {aiProcessing && (
+              <div className="flex items-center gap-3 rounded-2xl border border-purple-400/30 bg-purple-500/15 px-4 py-3 text-sm text-purple-100">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                AI is processing your command…
+              </div>
+            )}
+            {autoSubmitting && (
+              <div className="flex items-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100">
+                <Sparkles className="h-4 w-4" />
+                Processing captured voice transcript…
+              </div>
+            )}
+          </div>
+        )}
+
+        {conversationMessage && (
+          <div
+            className={`rounded-2xl border px-5 py-4 text-sm backdrop-blur ${
+              conversationMessage.includes('yes') || conversationMessage.includes('confirm')
+                ? 'border-orange-400/30 bg-orange-500/15 text-orange-100'
+                : 'border-sky-400/30 bg-sky-500/15 text-sky-100'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className={`inline-flex h-2 w-2 rounded-full ${
+                  conversationMessage.includes('yes') || conversationMessage.includes('confirm') ? 'bg-orange-300' : 'bg-sky-300'
+                } animate-pulse`}
+              ></span>
+              <span className="font-medium">{conversationMessage}</span>
+            </div>
+            <div className="mt-2 text-xs opacity-70">
+              {conversationMessage.includes('yes') || conversationMessage.includes('confirm')
+                ? 'Reply “yes” to approve or “no” to cancel the current plan.'
+                : 'Provide the referenced task number or additional context to continue.'}
+            </div>
+          </div>
+        )}
       </div>
-
-      {aiProcessing && (
-        <div className="backdrop-blur-md bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
-            <div className="text-sm font-medium text-purple-300">AI is processing your request...</div>
-          </div>
-        </div>
-      )}
-
-      {autoSubmitting && (
-        <div className="backdrop-blur-md bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-400/30 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <div className="text-sm font-medium text-green-300">Processing your voice command...</div>
-          </div>
-        </div>
-      )}
-
-      {conversationMessage && (
-        <div className={`backdrop-blur-md border rounded-xl p-4 ${
-          conversationMessage.includes('yes') || conversationMessage.includes('confirm') 
-            ? 'bg-gradient-to-r from-orange-500/20 to-red-500/20 border-orange-400/30' 
-            : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-400/30'
-        }`}>
-          <div className="flex items-center gap-3">
-            <div className={`w-2 h-2 rounded-full animate-pulse ${
-              conversationMessage.includes('yes') || conversationMessage.includes('confirm')
-                ? 'bg-orange-400'
-                : 'bg-blue-400'
-            }`}></div>
-            <div className={`text-sm font-medium ${
-              conversationMessage.includes('yes') || conversationMessage.includes('confirm')
-                ? 'text-orange-300'
-                : 'text-blue-300'
-            }`}>{conversationMessage}</div>
-          </div>
-          <div className={`text-xs mt-2 italic ${
-            conversationMessage.includes('yes') || conversationMessage.includes('confirm')
-              ? 'text-orange-200/70'
-              : 'text-blue-200/70'
-          }`}>
-            {conversationMessage.includes('yes') || conversationMessage.includes('confirm')
-              ? 'Type "yes" to confirm or "no" to cancel...'
-              : 'Type the task number and press Send...'
-            }
-          </div>
-        </div>
-      )}
 
       {false && paramReqs.length > 0 && (
         <div className="space-y-3">
@@ -323,12 +334,22 @@ export default function Chat({ socket, sessionId, confirmations, setConfirmation
         </div>
       )}
 
-      <div className="space-y-3 max-h-64 overflow-y-auto">
-        {intents.map((i, idx) => (
-          <div key={`${i.meta?.text || 'intent'}-${idx}-${Date.now()}`} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-3">
-            <pre className="text-xs overflow-auto max-h-48 text-white/60 font-mono">{JSON.stringify(i, null, 2)}</pre>
-          </div>
-        ))}
+      <div className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.28em] text-white/50">Intent Log</h3>
+          <span className="text-xs text-white/40">{intents.length} entries</span>
+        </div>
+        <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+          {intents.map((i, idx) => (
+            <div
+              key={`${i.meta?.text || 'intent'}-${idx}-${Date.now()}`}
+              className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-white/70"
+            >
+              <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-fuchsia-400/70 via-purple-400/60 to-blue-500/60"></div>
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed">{JSON.stringify(i, null, 2)}</pre>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

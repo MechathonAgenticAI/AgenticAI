@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Plus } from 'lucide-react';
+import { Plus, CheckCircle2, CircleDashed, ClipboardList } from 'lucide-react';
 
 export default function TaskBoard({ socket }) {
   const [tasks, setTasks] = useState([]);
@@ -61,69 +61,145 @@ export default function TaskBoard({ socket }) {
     await axios.delete(`http://localhost:4000/api/tasks/${id}`);
   };
 
+  const completedCount = useMemo(() => tasks.filter((t) => t.status === 'done').length, [tasks]);
+  const activeCount = tasks.length - completedCount;
+
   return (
-    <div className="backdrop-blur-lg bg-white/10 border border-white/20 rounded-2xl p-6 shadow-2xl">
-      <div className="flex flex-col gap-4 mb-6">
-        <h2 className="text-2xl font-bold text-white bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Tasks</h2>
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input 
-              className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-transparent backdrop-blur-sm transition-all duration-200 w-full" 
-              placeholder="Title" 
-              value={title} 
-              onChange={(e)=>setTitle(e.target.value)} 
+    <div className="space-y-6">
+      <div className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_60px_-45px_rgba(59,130,246,0.7)] backdrop-blur-2xl sm:p-7">
+        <header className="space-y-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">Task Intelligence</h2>
+              <p className="text-sm text-white/60">Add new intents for the agent and track their completion flow.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[0.7rem] font-medium tracking-[0.08em] text-white/55">
+              {['Realtime', 'Socket sync', 'AI ready'].map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 leading-none backdrop-blur"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[{
+              icon: <ClipboardList className="h-4 w-4" />, label: 'Total intents', value: tasks.length || 0,
+              accent: 'from-blue-500/80 to-indigo-500/60'
+            }, {
+              icon: <CircleDashed className="h-4 w-4" />, label: 'Active', value: activeCount,
+              accent: 'from-cyan-500/80 to-teal-500/60'
+            }, {
+              icon: <CheckCircle2 className="h-4 w-4" />, label: 'Completed', value: completedCount,
+              accent: 'from-emerald-500/80 to-lime-500/60'
+            }].map((stat) => (
+              <div
+                key={stat.label}
+                className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-4 backdrop-blur"
+              >
+                <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${stat.accent} opacity-20`}></div>
+                <div className="relative flex items-center gap-3 text-white">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+                    {stat.icon}
+                  </span>
+                  <div>
+                    <div className="text-lg font-semibold">{stat.value}</div>
+                    <div className="text-[0.65rem] uppercase tracking-[0.1em] text-white/55">{stat.label}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </header>
+
+        <div className="space-y-4">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <input
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/30 focus:outline-none focus:ring-2 focus:ring-sky-400/50"
+              placeholder="Task title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
             />
-            <input 
-              className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-transparent backdrop-blur-sm transition-all duration-200 w-full" 
-              placeholder="Description" 
-              value={description} 
-              onChange={(e)=>setDescription(e.target.value)} 
+            <input
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/30 focus:outline-none focus:ring-2 focus:ring-sky-400/50"
+              placeholder="Optional context or description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          <button 
-            onClick={add} 
-            className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-2 rounded-lg font-medium hover:from-blue-600 hover:to-purple-600 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl backdrop-blur-sm w-full sm:w-auto"
+          <button
+            onClick={add}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-500/40 bg-gradient-to-r from-sky-500/50 via-indigo-500/50 to-purple-500/50 px-6 py-3 text-sm font-medium text-white shadow-[0_15px_35px_-20px_rgba(59,130,246,0.8)] transition-all duration-200 hover:-translate-y-1 hover:border-sky-400/60 hover:shadow-[0_25px_55px_-25px_rgba(79,70,229,0.8)] sm:w-auto"
           >
-            <Plus size={18}/>Add
+            <Plus size={18} /> Add intent
           </button>
         </div>
       </div>
-      <div className="space-y-3">
-        {tasks.map((t, index) => (
-          <div key={t.id} className="backdrop-blur-md bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-white/10 transition-all duration-200 group">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-xs bg-gradient-to-r from-blue-400/20 to-purple-400/20 border border-blue-400/30 px-3 py-1 rounded-full font-mono text-blue-300 backdrop-blur-sm flex-shrink-0">#{index + 1}</span>
-                <div className="font-semibold text-white text-lg truncate">{t.title}</div>
-              </div>
-              <div className="text-sm text-white/60 font-mono mt-1 truncate">ID: {t.id.substring(0, 8)}...</div>
-              {t.description && <div className="text-sm text-white/70 mt-2 italic line-clamp-2">{t.description}</div>}
-            </div>
-            <div className="flex gap-2 items-center flex-shrink-0">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm border flex-shrink-0 ${
-                t.status==='done' 
-                  ? 'bg-green-400/20 text-green-300 border-green-400/30' 
-                  : 'bg-gray-400/20 text-gray-300 border-gray-400/30'
-              }`}>
-                {t.status}
-              </span>
-              {t.status !== 'done' && (
-                <button 
-                  onClick={() => markDone(t.id)} 
-                  className="text-sm bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm flex-shrink-0"
-                >
-                  ✓ Done
-                </button>
-              )}
-              <button 
-                onClick={() => remove(t.id)} 
-                className="text-sm bg-gradient-to-r from-red-500 to-pink-500 text-white px-4 py-2 rounded-lg font-medium hover:from-red-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg backdrop-blur-sm flex-shrink-0"
-              >
-                × Delete
-              </button>
-            </div>
+
+      <div className="space-y-3 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-4 shadow-[0_20px_60px_-45px_rgba(236,72,153,0.4)] backdrop-blur-2xl sm:p-6">
+        {tasks.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/15 bg-white/5 px-6 py-12 text-center text-white/60">
+            <ClipboardList className="h-8 w-8 text-white/30" />
+            <div className="text-lg font-medium text-white/80">No tasks yet</div>
+            <p className="max-w-sm text-sm text-white/60">
+              Create an intent above to see how the agent executes and updates tasks in realtime.
+            </p>
           </div>
-        ))}
+        ) : (
+          tasks.map((t, index) => (
+            <div
+              key={t.id}
+              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition-all duration-200 hover:-translate-y-1 hover:border-emerald-400/40 hover:bg-emerald-500/10"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-mono text-white/60 leading-none">
+                      #{String(index + 1).padStart(2, '0')}
+                    </span>
+                    <h3 className="truncate text-lg font-semibold text-white">{t.title}</h3>
+                  </div>
+                  <div className="text-xs font-mono uppercase tracking-[0.25em] text-white/30">{t.id.substring(0, 8)}…</div>
+                  {t.description && (
+                    <p className="text-sm text-white/70 line-clamp-2">{t.description}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-shrink-0 items-center gap-2 text-xs">
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-medium backdrop-blur leading-none ${
+                      t.status === 'done'
+                        ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
+                        : 'border-slate-400/30 bg-slate-500/15 text-slate-200'
+                    }`}
+                  >
+                    {t.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDashed className="h-3.5 w-3.5" />}
+                    {t.status}
+                  </span>
+
+                  {t.status !== 'done' && (
+                    <button
+                      onClick={() => markDone(t.id)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-4 py-2 font-medium text-emerald-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-500/30"
+                    >
+                      Mark done
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => remove(t.id)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-rose-400/40 bg-rose-500/15 px-4 py-2 font-medium text-rose-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-rose-500/25"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
